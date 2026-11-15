@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# A stand-alone starter project that is copied out of the repository.
+exclude = ["template"]
 
 [workspace.package]
 version = "0.1.0"
