@@ -34,12 +34,15 @@
 //! }
 //! ```
 
+mod animation;
 mod app;
 mod assets;
 mod debug;
+mod particles;
 mod scene;
 mod scene_file;
 
+pub use animation::{AnimationPlayer, Skin};
 pub use app::{run, Config, Context, Error, Game, System};
 pub use assets::{Model, ModelPart};
 pub use engine_assets::AssetError;
@@ -49,14 +52,17 @@ pub use engine_physics::{BodyKind, Collider, Collision, Physics, RayHit, RigidBo
 pub use engine_platform::{Input, KeyCode, MouseButton, WindowConfig};
 pub use engine_render::glam as math;
 pub use engine_render::{
-    Camera, Material, Mesh, MeshData, RenderError, Renderer, Texture, Vertex, MAX_POINT_LIGHTS,
+    Camera, Material, Mesh, MeshData, ParticleBlend, RenderError, Renderer, Texture, Vertex,
+    MAX_POINT_LIGHTS,
 };
 pub use engine_scene::hecs as ecs;
 pub use engine_scene::{
     despawn_recursive, find_by_name, propagate_transforms, Entity, GlobalTransform, Name, Parent,
     Transform, World,
 };
+pub use engine_script::Script;
 pub use engine_ui::egui;
 pub use log;
-pub use scene::{DirectionalLight, MeshRenderer, PointLight};
+pub use particles::ParticleEmitter;
+pub use scene::{pick, DirectionalLight, MeshRenderer, PointLight};
 pub use scene_file::{MaterialDesc, SceneEntity, SceneFile, Visual};

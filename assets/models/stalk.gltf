@@ -1,0 +1,440 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "Jewish-Game-Engine test asset"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0,
+    1
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "Stalk",
+   "mesh": 0,
+   "skin": 0
+  },
+  {
+   "name": "Joint0",
+   "children": [
+    2
+   ]
+  },
+  {
+   "name": "Joint1",
+   "translation": [
+    0,
+    1,
+    0
+   ],
+   "children": [
+    3
+   ]
+  },
+  {
+   "name": "Joint2",
+   "translation": [
+    0,
+    1,
+    0
+   ],
+   "children": [
+    4
+   ]
+  },
+  {
+   "name": "Joint3",
+   "translation": [
+    0,
+    1,
+    0
+   ]
+  }
+ ],
+ "meshes": [
+  {
+   "name": "Stalk",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2,
+      "JOINTS_0": 3,
+      "WEIGHTS_0": 4
+     },
+     "indices": 5,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "Leaf",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.25,
+     0.7,
+     0.3,
+     1.0
+    ],
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.6
+   }
+  }
+ ],
+ "skins": [
+  {
+   "joints": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "inverseBindMatrices": 6,
+   "skeleton": 1
+  }
+ ],
+ "animations": [
+  {
+   "name": "Sway",
+   "samplers": [
+    {
+     "input": 7,
+     "output": 8,
+     "interpolation": "LINEAR"
+    },
+    {
+     "input": 7,
+     "output": 9,
+     "interpolation": "LINEAR"
+    },
+    {
+     "input": 7,
+     "output": 10,
+     "interpolation": "LINEAR"
+    },
+    {
+     "input": 7,
+     "output": 11,
+     "interpolation": "LINEAR"
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 1,
+      "path": "rotation"
+     }
+    },
+    {
+     "sampler": 1,
+     "target": {
+      "node": 2,
+      "path": "rotation"
+     }
+    },
+    {
+     "sampler": 2,
+     "target": {
+      "node": 3,
+      "path": "rotation"
+     }
+    },
+    {
+     "sampler": 3,
+     "target": {
+      "node": 4,
+      "path": "rotation"
+     }
+    }
+   ]
+  },
+  {
+   "name": "Twist",
+   "samplers": [
+    {
+     "input": 12,
+     "output": 13,
+     "interpolation": "LINEAR"
+    },
+    {
+     "input": 12,
+     "output": 14,
+     "interpolation": "LINEAR"
+    },
+    {
+     "input": 12,
+     "output": 15,
+     "interpolation": "LINEAR"
+    },
+    {
+     "input": 12,
+     "output": 16,
+     "interpolation": "LINEAR"
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 1,
+      "path": "rotation"
+     }
+    },
+    {
+     "sampler": 1,
+     "target": {
+      "node": 2,
+      "path": "rotation"
+     }
+    },
+    {
+     "sampler": 2,
+     "target": {
+      "node": 3,
+      "path": "rotation"
+     }
+    },
+    {
+     "sampler": 3,
+     "target": {
+      "node": 4,
+      "path": "rotation"
+     }
+    }
+   ]
+  }
+ ],
+ "buffers": [
+  {
+   "uri": "stalk.bin",
+   "byteLength": 18452
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 3120,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 3120,
+   "byteLength": 3120,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 6240,
+   "byteLength": 2080,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 8320,
+   "byteLength": 2080,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 10400,
+   "byteLength": 4160,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 14560,
+   "byteLength": 780,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 15340,
+   "byteLength": 256
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 15596,
+   "byteLength": 68
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 15664,
+   "byteLength": 272
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 15936,
+   "byteLength": 272
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 16208,
+   "byteLength": 272
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 16480,
+   "byteLength": 272
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 16752,
+   "byteLength": 100
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 16852,
+   "byteLength": 400
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 17252,
+   "byteLength": 400
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 17652,
+   "byteLength": 400
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 18052,
+   "byteLength": 400
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 260,
+   "type": "VEC3",
+   "min": [
+    -0.25,
+    0.0,
+    -0.25
+   ],
+   "max": [
+    0.25,
+    4.0,
+    0.25
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 260,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 260,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 260,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5126,
+   "count": 260,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5123,
+   "count": 390,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 4,
+   "type": "MAT4"
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5126,
+   "count": 17,
+   "type": "SCALAR",
+   "min": [
+    0.0
+   ],
+   "max": [
+    2.0
+   ]
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 17,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5126,
+   "count": 17,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 10,
+   "componentType": 5126,
+   "count": 17,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 11,
+   "componentType": 5126,
+   "count": 17,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 12,
+   "componentType": 5126,
+   "count": 25,
+   "type": "SCALAR",
+   "min": [
+    0.0
+   ],
+   "max": [
+    3.0
+   ]
+  },
+  {
+   "bufferView": 13,
+   "componentType": 5126,
+   "count": 25,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 14,
+   "componentType": 5126,
+   "count": 25,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 15,
+   "componentType": 5126,
+   "count": 25,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 16,
+   "componentType": 5126,
+   "count": 25,
+   "type": "VEC4"
+  }
+ ]
+}

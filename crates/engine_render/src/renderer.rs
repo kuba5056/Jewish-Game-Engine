@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
 use engine_platform::winit::window::Window;
-use glam::{Mat3, Mat4, Vec3};
+use glam::{Mat3, Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
 use crate::camera::Camera;
@@ -48,6 +48,8 @@ struct Globals {
     view_proj: [[f32; 4]; 4],
     light_view_proj: [[f32; 4]; 4],
     camera_position: [f32; 4],
+    camera_right: [f32; 4],
+    camera_up: [f32; 4],
     ambient_sky: [f32; 4],
     ambient_ground: [f32; 4],
     sun_direction: [f32; 4],
@@ -66,7 +68,8 @@ struct Instance {
     /// perpendicular under non-uniform scale.
     normal: [[f32; 4]; 3],
     base_color: [f32; 4],
-    /// x: metallic, y: roughness.
+    /// x: metallic, y: roughness, z: 0 for a rigid mesh, otherwise one more
+    /// than the index of its first joint matrix this frame.
     surface: [f32; 4],
     emissive: [f32; 4],
 }
@@ -96,9 +99,32 @@ pub trait Overlay {
     fn paint(&mut self, pass: &mut wgpu::RenderPass<'static>);
 }
 
+/// How a particle's colour combines with what is behind it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParticleBlend {
+    /// Covers what is behind it according to its alpha: smoke, dust.
+    Alpha,
+    /// Adds its light to what is behind it: fire, sparks, glows.
+    Additive,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ParticleInstance {
+    /// xyz: world position of the centre, w: diameter.
+    position_size: [f32; 4],
+    color: [f32; 4],
+}
+
+impl ParticleInstance {
+    const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
+}
+
 struct DrawCommand {
     mesh: Mesh,
     texture: Texture,
+    casts_shadow: bool,
 }
 
 /// Render targets that depend on the window size.
@@ -120,25 +146,38 @@ pub struct Renderer {
     targets: Targets,
 
     mesh_pipeline: wgpu::RenderPipeline,
+    alpha_particle_pipeline: wgpu::RenderPipeline,
+    additive_particle_pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
     tonemap_pipeline: wgpu::RenderPipeline,
 
     globals_buffer: wgpu::Buffer,
+    globals_layout: wgpu::BindGroupLayout,
     globals_bind_group: wgpu::BindGroup,
     shadow_view: wgpu::TextureView,
+    shadow_sampler: wgpu::Sampler,
     shadow_buffer: wgpu::Buffer,
+    shadow_layout: wgpu::BindGroupLayout,
     shadow_bind_group: wgpu::BindGroup,
+    /// Joint matrices of this frame's skinned meshes, on the GPU.
+    joint_buffer: wgpu::Buffer,
+    joint_capacity: usize,
     tonemap_layout: wgpu::BindGroupLayout,
     tonemap_buffer: wgpu::Buffer,
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
+    particle_buffer: wgpu::Buffer,
+    particle_capacity: usize,
     white: Texture,
 
     /// Queued for the current frame; `instances[i]` belongs to `commands[i]`.
     commands: Vec<DrawCommand>,
     instances: Vec<Instance>,
+    joints: Vec<[[f32; 4]; 4]>,
+    alpha_particles: Vec<ParticleInstance>,
+    additive_particles: Vec<ParticleInstance>,
     sun: Option<Sun>,
     point_lights: Vec<PointLight>,
 
@@ -215,6 +254,16 @@ impl Renderer {
             },
             count: None,
         };
+        let joints_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
         let uniform_buffer = |label, size| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
@@ -257,15 +306,10 @@ impl Renderer {
         let shadow_buffer = uniform_buffer("shadow uniforms", 64);
         let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("shadow layout"),
-            entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX)],
-        });
-        let shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shadow uniforms"),
-            layout: &shadow_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: shadow_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                uniform_entry(0, wgpu::ShaderStages::VERTEX),
+                joints_entry(1),
+            ],
         });
         let shadow_shader = device.create_shader_module(wgpu::include_wgsl!("shadow.wgsl"));
         let shadow_pipeline_layout =
@@ -329,6 +373,7 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
+                joints_entry(3),
             ],
         });
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -338,24 +383,18 @@ impl Renderer {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
-        let globals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("globals"),
-            layout: &globals_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: globals_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&shadow_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
-                },
-            ],
-        });
+        let joint_capacity = 64;
+        let joint_buffer = create_joint_buffer(&device, joint_capacity);
+        let (globals_bind_group, shadow_bind_group) = create_frame_bind_groups(
+            &device,
+            &globals_layout,
+            &globals_buffer,
+            &shadow_view,
+            &shadow_sampler,
+            &shadow_layout,
+            &shadow_buffer,
+            &joint_buffer,
+        );
 
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("texture layout"),
@@ -428,6 +467,71 @@ impl Renderer {
             cache: None,
         });
 
+        // --- Particles (drawn in the main pass, after the meshes) --------
+        let particle_shader = device.create_shader_module(wgpu::include_wgsl!("particles.wgsl"));
+        let particle_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("particle pipeline layout"),
+                bind_group_layouts: &[Some(&globals_layout)],
+                immediate_size: 0,
+            });
+        let particle_pipeline = |label, blend| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&particle_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &particle_shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<ParticleInstance>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &ParticleInstance::ATTRIBUTES,
+                    })],
+                },
+                primitive: Default::default(),
+                // Hidden behind solid objects, but particles do not hide one
+                // another: they are see-through, so they leave depth alone.
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: SAMPLES,
+                    ..Default::default()
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &particle_shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: HDR_FORMAT,
+                        blend: Some(blend),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let alpha_particle_pipeline =
+            particle_pipeline("alpha particles", wgpu::BlendState::ALPHA_BLENDING);
+        let additive = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::SrcAlpha,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
+        };
+        let additive_particle_pipeline = particle_pipeline(
+            "additive particles",
+            wgpu::BlendState {
+                color: additive,
+                alpha: additive,
+            },
+        );
+
         // --- Tone-mapping pass -------------------------------------------
         let tonemap_buffer = uniform_buffer("tonemap uniforms", 16);
         let tonemap_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -478,6 +582,8 @@ impl Renderer {
         let targets = create_targets(&device, &config, &tonemap_layout, &tonemap_buffer);
         let instance_capacity = 256;
         let instance_buffer = create_instance_buffer(&device, instance_capacity);
+        let particle_capacity = 1024;
+        let particle_buffer = create_particle_buffer(&device, particle_capacity);
         let white = Texture::new(upload_texture(
             &device,
             &queue,
@@ -495,22 +601,34 @@ impl Renderer {
             config,
             targets,
             mesh_pipeline,
+            alpha_particle_pipeline,
+            additive_particle_pipeline,
             shadow_pipeline,
             tonemap_pipeline,
             globals_buffer,
+            globals_layout,
             globals_bind_group,
             shadow_view,
+            shadow_sampler,
             shadow_buffer,
+            shadow_layout,
             shadow_bind_group,
+            joint_buffer,
+            joint_capacity,
             tonemap_layout,
             tonemap_buffer,
             texture_layout,
             sampler,
             instance_buffer,
             instance_capacity,
+            particle_buffer,
+            particle_capacity,
             white,
             commands: Vec::new(),
             instances: Vec::new(),
+            joints: Vec::new(),
+            alpha_particles: Vec::new(),
+            additive_particles: Vec::new(),
             sun: None,
             point_lights: Vec::new(),
             clear_color: Vec3::new(0.02, 0.02, 0.03),
@@ -592,6 +710,39 @@ impl Renderer {
 
     /// Queues a mesh to be drawn this frame at `transform` (model-to-world).
     pub fn draw(&mut self, mesh: &Mesh, material: &Material, transform: Mat4) {
+        self.queue_draw(mesh, material, transform, 0.0, true);
+    }
+
+    /// Like [`draw`](Self::draw), but the mesh casts no shadow: for helpers
+    /// such as editor handles and markers that are not part of the scene.
+    pub fn draw_without_shadow(&mut self, mesh: &Mesh, material: &Material, transform: Mat4) {
+        self.queue_draw(mesh, material, transform, 0.0, false);
+    }
+
+    /// Queues a skinned mesh: one whose vertices follow a skeleton.
+    ///
+    /// `joint_matrices` holds, for each joint of the mesh's skin, the joint's
+    /// current world transform times its inverse bind matrix. They place the
+    /// vertices in the world by themselves, so there is no model transform.
+    pub fn draw_skinned(&mut self, mesh: &Mesh, material: &Material, joint_matrices: &[Mat4]) {
+        if joint_matrices.is_empty() {
+            return;
+        }
+        // Zero is reserved for "not skinned", hence the offset by one.
+        let first = self.joints.len() as f32 + 1.0;
+        self.joints
+            .extend(joint_matrices.iter().map(Mat4::to_cols_array_2d));
+        self.queue_draw(mesh, material, Mat4::IDENTITY, first, true);
+    }
+
+    fn queue_draw(
+        &mut self,
+        mesh: &Mesh,
+        material: &Material,
+        transform: Mat4,
+        skin: f32,
+        casts_shadow: bool,
+    ) {
         let normal = Mat3::from_mat4(transform).inverse().transpose();
         self.instances.push(Instance {
             model: transform.to_cols_array_2d(),
@@ -601,7 +752,7 @@ impl Renderer {
                 normal.z_axis.extend(0.0).to_array(),
             ],
             base_color: material.base_color.to_array(),
-            surface: [material.metallic, material.roughness, 0.0, 0.0],
+            surface: [material.metallic, material.roughness, skin, 0.0],
             emissive: material.emissive.extend(0.0).to_array(),
         });
         self.commands.push(DrawCommand {
@@ -610,7 +761,28 @@ impl Renderer {
                 .texture
                 .clone()
                 .unwrap_or_else(|| self.white.clone()),
+            casts_shadow,
         });
+    }
+
+    /// Queues one particle for this frame: a soft disc that always faces the
+    /// camera, `size` units across, centred on `position`.
+    ///
+    /// Particles are not lit; `color` is linear RGBA, and values above 1 glow.
+    pub fn draw_particle(&mut self, position: Vec3, size: f32, color: Vec4, blend: ParticleBlend) {
+        let instance = ParticleInstance {
+            position_size: position.extend(size).to_array(),
+            color: color.to_array(),
+        };
+        match blend {
+            ParticleBlend::Alpha => self.alpha_particles.push(instance),
+            ParticleBlend::Additive => self.additive_particles.push(instance),
+        }
+    }
+
+    /// Number of particles queued for the current frame so far.
+    pub fn queued_particles(&self) -> usize {
+        self.alpha_particles.len() + self.additive_particles.len()
     }
 
     /// Lights this frame with a distant light such as the sun: parallel rays
@@ -680,6 +852,9 @@ impl Renderer {
         let presented = self.render_queued(camera, overlay);
         self.commands.clear();
         self.instances.clear();
+        self.joints.clear();
+        self.alpha_particles.clear();
+        self.additive_particles.clear();
         self.sun = None;
         self.point_lights.clear();
         presented
@@ -724,6 +899,8 @@ impl Renderer {
             view_proj: camera.view_projection(aspect).to_cols_array_2d(),
             light_view_proj: light_view_proj.to_cols_array_2d(),
             camera_position: camera.position.extend(1.0).to_array(),
+            camera_right: camera.right().extend(0.0).to_array(),
+            camera_up: camera.up().extend(0.0).to_array(),
             ambient_sky: self.ambient_sky.extend(0.0).to_array(),
             ambient_ground: self.ambient_ground.extend(0.0).to_array(),
             sun_direction: self
@@ -774,6 +951,49 @@ impl Renderer {
             bytemuck::cast_slice(&self.instances),
         );
 
+        if self.joints.len() > self.joint_capacity {
+            self.joint_capacity = self.joints.len().next_power_of_two();
+            self.joint_buffer = create_joint_buffer(&self.device, self.joint_capacity);
+            // The bind groups refer to the old buffer.
+            (self.globals_bind_group, self.shadow_bind_group) = create_frame_bind_groups(
+                &self.device,
+                &self.globals_layout,
+                &self.globals_buffer,
+                &self.shadow_view,
+                &self.shadow_sampler,
+                &self.shadow_layout,
+                &self.shadow_buffer,
+                &self.joint_buffer,
+            );
+        }
+        self.queue
+            .write_buffer(&self.joint_buffer, 0, bytemuck::cast_slice(&self.joints));
+
+        // Alpha-blended particles only look right drawn far to near, each
+        // over the ones behind it. Additive ones sum up in any order.
+        let distance = |p: &ParticleInstance| {
+            let [x, y, z, _] = p.position_size;
+            Vec3::new(x, y, z).distance_squared(camera.position)
+        };
+        self.alpha_particles
+            .sort_by(|a, b| distance(b).total_cmp(&distance(a)));
+        let particle_count = self.alpha_particles.len() + self.additive_particles.len();
+        if particle_count > self.particle_capacity {
+            self.particle_capacity = particle_count.next_power_of_two();
+            self.particle_buffer = create_particle_buffer(&self.device, self.particle_capacity);
+        }
+        let additive_offset = std::mem::size_of_val(self.alpha_particles.as_slice()) as u64;
+        self.queue.write_buffer(
+            &self.particle_buffer,
+            0,
+            bytemuck::cast_slice(&self.alpha_particles),
+        );
+        self.queue.write_buffer(
+            &self.particle_buffer,
+            additive_offset,
+            bytemuck::cast_slice(&self.additive_particles),
+        );
+
         // Look up what each handle points at now, so resources replaced since
         // the draw was queued (hot reload) show their new contents.
         struct Resolved {
@@ -781,6 +1001,7 @@ impl Renderer {
             indices: wgpu::Buffer,
             index_count: u32,
             texture: wgpu::BindGroup,
+            casts_shadow: bool,
         }
         let resolved: Vec<Resolved> = self
             .commands
@@ -792,14 +1013,19 @@ impl Renderer {
                     indices: mesh.index_buffer.clone(),
                     index_count: mesh.index_count,
                     texture: command.texture.gpu().bind_group.clone(),
+                    casts_shadow: command.casts_shadow,
                 }
             })
             .collect();
-        let draw_all = |pass: &mut wgpu::RenderPass, with_textures: bool| {
+        // `shadow_pass` draws depth only: no textures, and only shadow casters.
+        let draw_all = |pass: &mut wgpu::RenderPass, shadow_pass: bool| {
             pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             for (i, draw) in resolved.iter().enumerate() {
                 let i = i as u32;
-                if with_textures {
+                if shadow_pass && !draw.casts_shadow {
+                    continue;
+                }
+                if !shadow_pass {
                     pass.set_bind_group(1, &draw.texture, &[]);
                 }
                 pass.set_vertex_buffer(0, draw.vertices.slice(..));
@@ -836,7 +1062,7 @@ impl Renderer {
             });
             pass.set_pipeline(&self.shadow_pipeline);
             pass.set_bind_group(0, &self.shadow_bind_group, &[]);
-            draw_all(&mut pass, false);
+            draw_all(&mut pass, true);
         }
 
         // --- Pass 2: lit scene into the HDR target -----------------------
@@ -870,7 +1096,22 @@ impl Renderer {
             });
             pass.set_pipeline(&self.mesh_pipeline);
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
-            draw_all(&mut pass, true);
+            draw_all(&mut pass, false);
+
+            // Particles go last, over the finished opaque scene.
+            let alpha = self.alpha_particles.len() as u32;
+            let additive = self.additive_particles.len() as u32;
+            if alpha + additive > 0 {
+                pass.set_vertex_buffer(0, self.particle_buffer.slice(..));
+                if alpha > 0 {
+                    pass.set_pipeline(&self.alpha_particle_pipeline);
+                    pass.draw(0..6, 0..alpha);
+                }
+                if additive > 0 {
+                    pass.set_pipeline(&self.additive_particle_pipeline);
+                    pass.draw(0..6, alpha..alpha + additive);
+                }
+            }
         }
 
         // --- Pass 3: tone map to the window, then the overlay ------------
@@ -967,6 +1208,76 @@ fn create_targets(
     }
 }
 
+fn create_particle_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("particles"),
+        size: (capacity * std::mem::size_of::<ParticleInstance>()) as u64,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+fn create_joint_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("joint matrices"),
+        size: (capacity * std::mem::size_of::<[[f32; 4]; 4]>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+/// The bind groups shared by every draw in the main pass and in the shadow
+/// pass. Both include the joint buffer, so they are rebuilt when it grows.
+#[allow(clippy::too_many_arguments)]
+fn create_frame_bind_groups(
+    device: &wgpu::Device,
+    globals_layout: &wgpu::BindGroupLayout,
+    globals_buffer: &wgpu::Buffer,
+    shadow_view: &wgpu::TextureView,
+    shadow_sampler: &wgpu::Sampler,
+    shadow_layout: &wgpu::BindGroupLayout,
+    shadow_buffer: &wgpu::Buffer,
+    joint_buffer: &wgpu::Buffer,
+) -> (wgpu::BindGroup, wgpu::BindGroup) {
+    let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("globals"),
+        layout: globals_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(shadow_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(shadow_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: joint_buffer.as_entire_binding(),
+            },
+        ],
+    });
+    let shadow = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("shadow uniforms"),
+        layout: shadow_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: shadow_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: joint_buffer.as_entire_binding(),
+            },
+        ],
+    });
+    (globals, shadow)
+}
+
 fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("instances"),
@@ -991,6 +1302,7 @@ fn upload_mesh(device: &wgpu::Device, data: &MeshData) -> MeshGpu {
         vertex_buffer,
         index_buffer,
         index_count: data.indices.len() as u32,
+        bounds: data.bounds(),
     }
 }
 

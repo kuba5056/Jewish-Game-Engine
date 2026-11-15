@@ -17,6 +17,12 @@ Early. Working so far:
 - assets: glTF models and PNG/JPEG textures loaded from an `assets/`
   directory, shared when loaded twice, and reloaded on screen when the
   files change (debug builds)
+- animation: skeletal (skinned meshes) and node animation from glTF, with
+  an `AnimationPlayer` per model instance
+- particles: emitters as components (fire, smoke and burst presets or
+  custom settings), alpha-blended or additive, saved in scene files
+- scripting: game logic in Rhai script files attached to entities, with
+  access to transforms, input, physics, sound and scenes; reloaded on change
 - physics (rapier): boxes, spheres and capsules as dynamic, kinematic or
   static bodies, collision events, sensors, raycasts
 - audio (kira): WAV/OGG/MP3/FLAC playback with volume, pitch, pan and
@@ -26,7 +32,7 @@ Early. Working so far:
 - scene files (RON): describe entities in a file, load them, and save the
   world back
 
-Possible next steps: skeletal animation, particles, collision with
+Possible next steps: undo in the editor, animation blending, collision with
 arbitrary meshes, spatial audio, networking.
 
 ## Try it
@@ -36,6 +42,9 @@ cargo run --example cubes   # entities, hierarchy, materials, lights, fly camera
 cargo run --example model   # glTF model loading and hot reload
 cargo run --example physics # rigid bodies, collisions, sound
 cargo run --example scene   # scene file, debug overlay, inspector
+cargo run --example animation # skinned and node animation
+cargo run --example particles # fire, smoke, fountain, bursts
+cargo run --example scripted  # a game made only of a scene file and scripts
 ```
 
 In `cubes`, hold the right mouse button to look around, WASD to move.
@@ -48,17 +57,35 @@ desktop libraries (X11 or Wayland, `libxkbcommon`) and a Vulkan driver, which
 every desktop distribution ships. Windows uses DirectX 12 or Vulkan and needs
 nothing extra.
 
-## Sparkball
+On NixOS, run `nix-shell` in the repository first: `shell.nix` provides all
+of the above. Graphics must be enabled in the system configuration
+(`hardware.graphics.enable = true;`).
 
-`games/sparkball` is a small complete game built only on the engine's public
-API: roll a ball around an arena, collect every spark before the clock runs
-out, avoid the sweeper and the edges. It has a menu, a HUD, pausing, win and
-lose screens and sound, and its level is the scene file
-`assets/scenes/arena.ron`.
+## Editor
+
+`crates/editor` is a scene editor built on the engine:
 
 ```
-cargo run -p sparkball            # WASD/arrows roll, Space jumps, Esc pauses
-cargo run -p sparkball -- --demo  # the game plays itself
+cargo run -p editor -- scenes/demo.ron
+```
+
+Click an object to select it and drag the coloured arrows to move it; edit
+its components in the inspector; add entities from the toolbar. "Play" runs
+the scene with physics and scripts, and "Stop" puts everything back. Hold the
+right mouse button to look around (WASD to fly), F frames the selection,
+Delete removes it, Ctrl+D duplicates, Ctrl+S saves.
+
+## Sparkball
+
+The `sparkball` example is a small complete game built only on the engine's
+public API: roll a ball around an arena, collect every spark before the clock
+runs out, avoid the sweeper and the edges. It has a menu, a HUD, pausing, win
+and lose screens and sound, and its level is the scene file
+`assets/scenes/arena.ron`. Use it as a starting point for a game of your own.
+
+```
+cargo run --example sparkball            # WASD/arrows roll, Space jumps, Esc pauses
+cargo run --example sparkball -- --demo  # the game plays itself
 ```
 
 ## Layout
@@ -71,9 +98,10 @@ cargo run -p sparkball -- --demo  # the game plays itself
 - `crates/engine_platform` – window and input (winit)
 - `crates/engine_render` – renderer (wgpu)
 - `crates/engine_scene` – ECS world, transforms and hierarchy (hecs)
+- `crates/engine_script` – scripting (Rhai)
 - `crates/engine_ui` – user interface (egui)
-- `games/sparkball` – the example game
-- `assets/` – models, textures, sounds and scenes used by the examples and the game
+- `crates/editor` – the scene editor
+- `assets/` – models, textures, sounds, scenes and scripts used by the examples
 
 ## License
 

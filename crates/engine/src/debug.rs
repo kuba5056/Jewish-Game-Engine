@@ -57,6 +57,7 @@ impl DebugUi {
                     ctx.world.len(),
                     ctx.renderer.queued_draws()
                 ));
+                ui.label(format!("{} particles", ctx.renderer.queued_particles()));
                 ui.separator();
                 ui.checkbox(&mut ctx.renderer.shadows, "Shadows");
                 ui.add(egui::Slider::new(&mut ctx.renderer.exposure, 0.1..=4.0).text("Exposure"));

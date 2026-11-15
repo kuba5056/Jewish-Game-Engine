@@ -4,7 +4,12 @@
 //! Controls: WASD or arrow keys to roll, Space to jump, Escape to pause,
 //! F3 for the engine's debug overlay.
 //!
-//! Run from the repository root with: `cargo run -p sparkball`
+//! A complete small game built only on the engine's public API: a menu, a
+//! level from a scene file, physics, pickups, a HUD, pausing, win and lose
+//! screens and sound. A starting point for a game of your own.
+//!
+//! Run from the repository root with: `cargo run --example sparkball`
+//! (options go after `--`, e.g. `cargo run --example sparkball -- --demo`).
 //!
 //! Options:
 //!   --level <file>      scene file under `assets/` (default scenes/arena.ron)
@@ -16,8 +21,8 @@ use engine::egui::{self, Align2, Color32, RichText};
 use engine::math::{Quat, Vec3};
 use engine::{
     despawn_recursive, find_by_name, Collider, Config, Context, Entity, Game, KeyCode,
-    MaterialDesc, Name, Parent, Playback, PointLight, RigidBody, Sound, Transform, Visual,
-    WindowConfig,
+    MaterialDesc, Name, Parent, ParticleEmitter, Playback, PointLight, RigidBody, Sound, Transform,
+    Visual, WindowConfig,
 };
 
 const BALL_RADIUS: f32 = 0.4;
@@ -335,6 +340,16 @@ impl Sparkball {
             // Two contacts with the same spark can arrive in one frame.
             if !ctx.world.contains(spark) {
                 continue;
+            }
+            // A puff of sparks where it was; the effect removes itself.
+            if let Ok(position) = ctx.world.get::<&Transform>(spark).map(|t| t.translation) {
+                let effect = ParticleEmitter {
+                    color_start: (SPARK_COLOR * 4.0).extend(1.0),
+                    color_end: SPARK_COLOR.extend(0.0),
+                    ..ParticleEmitter::burst(40)
+                };
+                ctx.world
+                    .spawn((Transform::from_translation(position), effect));
             }
             despawn_recursive(&mut ctx.world, spark);
             self.sparks_left = self.sparks_left.saturating_sub(1);

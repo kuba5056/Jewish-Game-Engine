@@ -1,0 +1,22 @@
+// A one-off puff of sparks; spawned by scripts where a coin was collected.
+(
+    entities: [
+        (
+            particles: (
+                rate: 0.0,
+                burst: 40,
+                emitting: false,
+                lifetime: (0.4, 0.8),
+                speed: (2.0, 5.0),
+                spread: 180.0,
+                gravity: (0.0, -9.81, 0.0),
+                drag: 1.0,
+                size: (0.14, 0.02),
+                color_start: (4.0, 3.2, 0.8, 1.0),
+                color_end: (3.0, 1.0, 0.1, 0.0),
+                additive: true,
+                despawn_when_done: true,
+            ),
+        ),
+    ],
+)

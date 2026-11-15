@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use engine_assets::AssetError;
-use engine_audio::{Audio, Sound};
+use engine_audio::{Audio, Playback, Sound};
 use engine_core::Time;
 use engine_physics::Physics;
 use engine_platform::winit::application::ApplicationHandler;
@@ -13,7 +13,8 @@ use engine_platform::winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop
 use engine_platform::winit::window::{CursorGrabMode, Window, WindowId};
 use engine_platform::{Input, KeyCode, WindowConfig};
 use engine_render::{Camera, RenderError, Renderer, Texture};
-use engine_scene::World;
+use engine_scene::{Parent, Transform, World};
+use engine_script::{Command, Frame, ScriptEngine};
 use engine_ui::{egui, Ui};
 
 use crate::assets::{Assets, Model};
@@ -90,6 +91,8 @@ pub struct Context {
     pub physics: Physics,
     /// Sound playback.
     pub audio: Audio,
+    /// While `true`, entity scripts do not run: for pause menus and editors.
+    pub scripts_paused: bool,
     /// Queue draws here during `update`; they are shown at the end of the frame.
     pub renderer: Renderer,
     /// The camera the frame is rendered from.
@@ -97,6 +100,7 @@ pub struct Context {
     window: Arc<Window>,
     pub(crate) assets: Assets,
     ui: Ui,
+    scripts: ScriptEngine,
     debug: Option<DebugUi>,
     debug_overlay_key: Option<KeyCode>,
     exit_requested: bool,
@@ -121,6 +125,57 @@ impl Context {
     /// `ctx.audio.play`. Loading the same path again reuses the decoded sound.
     pub fn load_sound(&mut self, path: impl AsRef<Path>) -> Result<Sound, AssetError> {
         self.assets.sound(path.as_ref())
+    }
+
+    /// Runs entity scripts for one frame (`fixed` false) or one physics step
+    /// whose new contacts are `collisions`, then does what they asked for.
+    fn run_scripts(&mut self, fixed: Option<&[engine_physics::Collision]>) {
+        if self.scripts_paused {
+            return;
+        }
+        let frame = Frame {
+            world: &mut self.world,
+            physics: &mut self.physics,
+            input: &self.input,
+            camera: &mut self.camera,
+            elapsed: self.time.elapsed().as_secs_f32(),
+        };
+        let commands = match fixed {
+            Some(collisions) => {
+                self.scripts
+                    .fixed_update(frame, self.time.fixed_delta_secs(), collisions)
+            }
+            None => self.scripts.update(frame, self.time.delta_secs()),
+        };
+        for command in commands {
+            match command {
+                Command::Exit => self.exit(),
+                Command::PlaySound { path, volume } => match self.load_sound(&path) {
+                    Ok(sound) => {
+                        let playback = Playback {
+                            volume,
+                            ..Playback::default()
+                        };
+                        self.audio.play_with(&sound, playback);
+                    }
+                    Err(e) => log::error!("{e}"),
+                },
+                Command::SpawnScene { path, offset } => match self.load_scene(&path) {
+                    Ok(entities) => {
+                        // Children move with their parents; shift only roots.
+                        for entity in entities {
+                            if self.world.satisfies::<&Parent>(entity) {
+                                continue;
+                            }
+                            if let Ok(mut transform) = self.world.get::<&mut Transform>(entity) {
+                                transform.translation += offset;
+                            }
+                        }
+                    }
+                    Err(e) => log::error!("{e}"),
+                },
+            }
+        }
     }
 
     /// Runs `system` once per frame, after [`Game::update`], in the order added.
@@ -262,18 +317,30 @@ impl<G: Game> Runner<G> {
         while ctx.time.step_fixed() {
             // Stepping first lets fixed_update react to this step's
             // collisions and see up-to-date positions.
+            let earlier_contacts = ctx.physics.collisions().len();
             ctx.physics
                 .step(&mut ctx.world, ctx.time.fixed_delta_secs());
             self.game.fixed_update(ctx);
             run_systems(ctx, |ctx| &ctx.fixed_systems);
+            // Scripts get each contact once: only those from this step, not
+            // the frame's whole list.
+            let contacts = ctx.physics.collisions()[earlier_contacts..].to_vec();
+            ctx.run_scripts(Some(&contacts));
         }
         self.game.update(ctx);
         run_systems(ctx, |ctx| &ctx.systems);
+        ctx.run_scripts(None);
         ctx.physics.clear_collisions();
 
         ctx.realize_visuals();
+        crate::animation::animate(&mut ctx.world, ctx.time.delta_secs());
         engine_scene::propagate_transforms(&mut ctx.world);
         draw_world(&ctx.world, &mut ctx.renderer);
+        crate::particles::update_particles(
+            &mut ctx.world,
+            &mut ctx.renderer,
+            ctx.time.delta_secs(),
+        );
 
         if ctx
             .debug_overlay_key
@@ -344,6 +411,8 @@ impl<G: Game> ApplicationHandler for Runner<G> {
         };
 
         let ui = Ui::new(&window, &renderer);
+        let assets = Assets::new(&self.config.asset_dir, self.config.hot_reload);
+        let scripts = ScriptEngine::new(assets.root(), self.config.hot_reload);
 
         let mut ctx = Context {
             time: Time::new(self.config.fixed_hz),
@@ -351,13 +420,15 @@ impl<G: Game> ApplicationHandler for Runner<G> {
             world: World::new(),
             physics: Physics::new(),
             audio: Audio::new(),
+            scripts_paused: false,
             renderer,
             camera: Camera::default(),
             ui,
             debug: Some(DebugUi::new(self.config.show_debug_overlay)),
             debug_overlay_key: self.config.debug_overlay_key,
             window,
-            assets: Assets::new(&self.config.asset_dir, self.config.hot_reload),
+            assets,
+            scripts,
             exit_requested: false,
             systems: Vec::new(),
             fixed_systems: Vec::new(),

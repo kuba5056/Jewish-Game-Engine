@@ -10,11 +10,30 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    /// For skinned meshes: the up to four skeleton joints that move this
+    /// vertex, as indices into the skin's joint list.
+    pub joints: [u16; 4],
+    /// How strongly each of `joints` pulls; sums to 1 on a skinned mesh and
+    /// is all zero on a rigid one.
+    pub weights: [f32; 4],
 }
 
 impl Vertex {
-    pub(crate) const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+    pub(crate) const ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+        0 => Float32x3, 1 => Float32x3, 2 => Float32x2,
+        13 => Uint16x4, 14 => Float32x4,
+    ];
+
+    /// A vertex of a rigid (unskinned) mesh.
+    pub fn new(position: [f32; 3], normal: [f32; 3], uv: [f32; 2]) -> Self {
+        Self {
+            position,
+            normal,
+            uv,
+            joints: [0; 4],
+            weights: [0.0; 4],
+        }
+    }
 }
 
 /// Mesh geometry in CPU memory: triangles, counter-clockwise front faces.
@@ -76,11 +95,11 @@ impl MeshData {
                 let u = segment as f32 / segments as f32;
                 let (sin_phi, cos_phi) = (u * 2.0 * PI).sin_cos();
                 let normal = Vec3::new(sin_theta * cos_phi, cos_theta, sin_theta * sin_phi);
-                mesh.vertices.push(Vertex {
-                    position: (normal * radius).to_array(),
-                    normal: normal.to_array(),
-                    uv: [u, v],
-                });
+                mesh.vertices.push(Vertex::new(
+                    (normal * radius).to_array(),
+                    normal.to_array(),
+                    [u, v],
+                ));
             }
         }
         let stride = segments + 1;
@@ -101,17 +120,27 @@ impl MeshData {
         mesh
     }
 
+    /// The smallest axis-aligned box around all vertices, as (min, max)
+    /// corners in the mesh's own space. Both are zero for an empty mesh.
+    pub fn bounds(&self) -> (Vec3, Vec3) {
+        let mut positions = self.vertices.iter().map(|v| Vec3::from(v.position));
+        let Some(first) = positions.next() else {
+            return (Vec3::ZERO, Vec3::ZERO);
+        };
+        positions.fold((first, first), |(min, max), p| (min.min(p), max.max(p)))
+    }
+
     /// Adds a quad spanning `centre ± u ± v`; `u x v` must point along `normal`.
     fn push_quad(&mut self, centre: Vec3, u: Vec3, v: Vec3, normal: Vec3, uv_scale: f32) {
         let base = self.vertices.len() as u32;
         let corners = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)];
         for (su, sv) in corners {
-            self.vertices.push(Vertex {
-                position: (centre + u * su + v * sv).to_array(),
-                normal: normal.to_array(),
+            self.vertices.push(Vertex::new(
+                (centre + u * su + v * sv).to_array(),
+                normal.to_array(),
                 // Image row 0 is the top, so v runs downwards.
-                uv: [(su + 1.0) * 0.5 * uv_scale, (1.0 - sv) * 0.5 * uv_scale],
-            });
+                [(su + 1.0) * 0.5 * uv_scale, (1.0 - sv) * 0.5 * uv_scale],
+            ));
         }
         self.indices
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -130,6 +159,7 @@ pub(crate) struct MeshGpu {
     pub(crate) vertex_buffer: wgpu::Buffer,
     pub(crate) index_buffer: wgpu::Buffer,
     pub(crate) index_count: u32,
+    pub(crate) bounds: (Vec3, Vec3),
 }
 
 impl Mesh {
@@ -141,6 +171,11 @@ impl Mesh {
     /// exists anywhere else.
     pub fn is_unique(&self) -> bool {
         Arc::strong_count(&self.0) == 1
+    }
+
+    /// The mesh's bounding box in its own space; see [`MeshData::bounds`].
+    pub fn bounds(&self) -> (Vec3, Vec3) {
+        self.gpu().bounds
     }
 
     pub(crate) fn gpu(&self) -> MutexGuard<'_, MeshGpu> {
@@ -203,6 +238,20 @@ mod tests {
             let face_normal = (pb - pa).cross(pc - pa).normalize();
             assert!(face_normal.dot((pa + pb + pc).normalize()) > 0.9);
         }
+    }
+
+    #[test]
+    fn bounds_enclose_the_mesh() {
+        assert_eq!(
+            MeshData::cube(2.0).bounds(),
+            (Vec3::splat(-1.0), Vec3::splat(1.0))
+        );
+        let (min, max) = MeshData::plane(10.0, 1.0).bounds();
+        assert_eq!(
+            (min, max),
+            (Vec3::new(-5.0, 0.0, -5.0), Vec3::new(5.0, 0.0, 5.0))
+        );
+        assert_eq!(MeshData::default().bounds(), (Vec3::ZERO, Vec3::ZERO));
     }
 
     #[test]
