@@ -8,5 +8,6 @@ license.workspace = true
 engine_core.workspace = true
 engine_platform.workspace = true
 engine_render.workspace = true
+engine_scene.workspace = true
 log.workspace = true
 env_logger.workspace = true

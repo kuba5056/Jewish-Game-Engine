@@ -9,6 +9,9 @@ use engine_platform::winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop
 use engine_platform::winit::window::{CursorGrabMode, Window, WindowId};
 use engine_platform::{Input, WindowConfig};
 use engine_render::{Camera, RenderError, Renderer};
+use engine_scene::World;
+
+use crate::scene::draw_world;
 
 /// Engine start-up settings.
 #[derive(Debug, Clone)]
@@ -50,19 +53,38 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// A reusable piece of game logic: a plain function run by the engine every
+/// frame or every fixed step. Register with [`Context::add_system`].
+pub type System = fn(&mut Context);
+
 /// Engine state handed to the game every callback.
 pub struct Context {
     pub time: Time,
     pub input: Input,
+    /// All entities and their components.
+    pub world: World,
     /// Queue draws here during `update`; they are shown at the end of the frame.
     pub renderer: Renderer,
     /// The camera the frame is rendered from.
     pub camera: Camera,
     window: Arc<Window>,
     exit_requested: bool,
+    systems: Vec<System>,
+    fixed_systems: Vec<System>,
 }
 
 impl Context {
+    /// Runs `system` once per frame, after [`Game::update`], in the order added.
+    pub fn add_system(&mut self, system: System) {
+        self.systems.push(system);
+    }
+
+    /// Runs `system` once per fixed step, after [`Game::fixed_update`], in the
+    /// order added.
+    pub fn add_fixed_system(&mut self, system: System) {
+        self.fixed_systems.push(system);
+    }
+
     /// The main window.
     pub fn window(&self) -> &Arc<Window> {
         &self.window
@@ -107,8 +129,9 @@ pub trait Game {
     /// Called at the fixed simulation rate; use `ctx.time.fixed_delta_secs()`.
     fn fixed_update(&mut self, _ctx: &mut Context) {}
 
-    /// Called once per frame; use `ctx.time.delta_secs()`. Draw here with
-    /// `ctx.renderer.draw(..)`.
+    /// Called once per frame; use `ctx.time.delta_secs()`. Entities with a
+    /// `MeshRenderer` are drawn automatically; for anything else, draw here
+    /// with `ctx.renderer.draw(..)`.
     fn update(&mut self, _ctx: &mut Context) {}
 
     /// Called when the window's drawable size changes (physical pixels).
@@ -165,9 +188,14 @@ impl<G: Game> Runner<G> {
 
         while ctx.time.step_fixed() {
             self.game.fixed_update(ctx);
+            run_systems(ctx, |ctx| &ctx.fixed_systems);
         }
         self.game.update(ctx);
+        run_systems(ctx, |ctx| &ctx.systems);
         ctx.input.end_frame();
+
+        engine_scene::propagate_transforms(&mut ctx.world);
+        draw_world(&ctx.world, &mut ctx.renderer);
 
         if !ctx.renderer.render(&ctx.camera) {
             // Nothing was presented (e.g. minimised), so vsync did not pace
@@ -178,6 +206,16 @@ impl<G: Game> Runner<G> {
         if ctx.exit_requested {
             event_loop.exit();
         }
+    }
+}
+
+/// Runs every system in a list. Indexing afresh each step (instead of
+/// iterating) lets a system register further systems while the list runs.
+fn run_systems(ctx: &mut Context, list: fn(&Context) -> &Vec<System>) {
+    let mut i = 0;
+    while let Some(&system) = list(ctx).get(i) {
+        system(ctx);
+        i += 1;
     }
 }
 
@@ -214,10 +252,13 @@ impl<G: Game> ApplicationHandler for Runner<G> {
         let mut ctx = Context {
             time: Time::new(self.config.fixed_hz),
             input: Input::default(),
+            world: World::new(),
             renderer,
             camera: Camera::default(),
             window,
             exit_requested: false,
+            systems: Vec::new(),
+            fixed_systems: Vec::new(),
         };
         self.game.init(&mut ctx);
         self.last_frame = Instant::now();

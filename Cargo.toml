@@ -11,9 +11,11 @@ license = "MIT"
 engine_core = { path = "crates/engine_core" }
 engine_platform = { path = "crates/engine_platform" }
 engine_render = { path = "crates/engine_render" }
+engine_scene = { path = "crates/engine_scene" }
 log = "0.4"
 env_logger = "0.11"
 winit = "0.30"
+hecs = "0.11"
 wgpu = "30"
 glam = { version = "0.34", features = ["bytemuck"] }
 bytemuck = { version = "1", features = ["derive"] }

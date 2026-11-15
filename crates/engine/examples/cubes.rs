@@ -1,23 +1,29 @@
-//! Spinning textured cubes over a floor, with a fly camera.
+//! Spinning textured cubes over a floor, built from entities, with a fly camera.
 //!
 //! Hold the right mouse button to look around, WASD to move, Space/Shift to
 //! go up/down, Escape to quit.
 //!
 //! Run with: `cargo run --example cubes`
 
-use engine::math::{Mat4, Quat, Vec3, Vec4};
-use engine::{Config, Context, Game, KeyCode, Mesh, MeshData, MouseButton, Texture, WindowConfig};
+use engine::math::{Quat, Vec3, Vec4};
+use engine::{
+    Config, Context, Game, KeyCode, MeshData, MeshRenderer, MouseButton, Parent, Transform,
+    WindowConfig,
+};
 
-struct Scene {
-    cube: Mesh,
-    floor: Mesh,
-    checker: Texture,
-    white: Texture,
+/// Rotates its entity at a constant rate: axis times radians per second.
+struct Spin(Vec3);
+
+/// A reusable system: turns every entity that has a `Spin`.
+fn spin_system(ctx: &mut Context) {
+    let dt = ctx.time.delta_secs();
+    for (transform, spin) in ctx.world.query_mut::<(&mut Transform, &Spin)>() {
+        transform.rotation = (Quat::from_scaled_axis(spin.0 * dt) * transform.rotation).normalize();
+    }
 }
 
 #[derive(Default)]
 struct Cubes {
-    scene: Option<Scene>,
     yaw: f32,
     pitch: f32,
 }
@@ -37,14 +43,60 @@ fn checkerboard(size: u32, cells: u32) -> Vec<u8> {
 
 impl Game for Cubes {
     fn init(&mut self, ctx: &mut Context) {
-        let renderer = &mut ctx.renderer;
-        renderer.clear_color = Vec3::new(0.25, 0.45, 0.8);
-        self.scene = Some(Scene {
-            cube: renderer.create_mesh(&MeshData::cube(1.0)),
-            floor: renderer.create_mesh(&MeshData::plane(40.0, 20.0)),
-            checker: renderer.create_texture(64, 64, &checkerboard(64, 4)),
-            white: renderer.white_texture(),
-        });
+        ctx.renderer.clear_color = Vec3::new(0.25, 0.45, 0.8);
+        let cube = ctx.renderer.create_mesh(&MeshData::cube(1.0));
+        let floor = ctx.renderer.create_mesh(&MeshData::plane(40.0, 20.0));
+        let checker = ctx.renderer.create_texture(64, 64, &checkerboard(64, 4));
+        let white = ctx.renderer.white_texture();
+
+        ctx.world.spawn((
+            Transform::IDENTITY,
+            MeshRenderer {
+                mesh: floor,
+                texture: checker.clone(),
+                color: Vec4::ONE,
+            },
+        ));
+
+        let colors = [
+            Vec4::new(1.0, 0.35, 0.3, 1.0),
+            Vec4::new(0.35, 1.0, 0.4, 1.0),
+            Vec4::new(0.4, 0.5, 1.0, 1.0),
+        ];
+        for (i, color) in colors.into_iter().enumerate() {
+            let parent = ctx.world.spawn((
+                Transform::from_xyz((i as f32 - 1.0) * 2.5, 1.2, 0.0),
+                Spin(Vec3::new(0.4, 0.5 + i as f32 * 0.3, 0.0)),
+                MeshRenderer {
+                    mesh: cube.clone(),
+                    texture: checker.clone(),
+                    color,
+                },
+            ));
+            // A small cube attached to the big one: it has no Spin of its
+            // own, yet orbits because its Transform is relative to the parent.
+            ctx.world.spawn((
+                Transform::from_xyz(0.0, 0.9, 0.0).with_scale(Vec3::splat(0.3)),
+                Parent(parent),
+                MeshRenderer {
+                    mesh: cube.clone(),
+                    texture: white.clone(),
+                    color,
+                },
+            ));
+        }
+
+        // A flat-coloured, non-uniformly scaled box behind the cubes.
+        ctx.world.spawn((
+            Transform::from_xyz(0.0, 2.0, -4.0).with_scale(Vec3::new(1.0, 4.0, 1.0)),
+            MeshRenderer {
+                mesh: cube,
+                texture: white,
+                color: Vec4::new(1.0, 0.8, 0.2, 1.0),
+            },
+        ));
+
+        ctx.add_system(spin_system);
 
         ctx.camera.position = Vec3::new(0.0, 2.5, 7.0);
         ctx.camera.look_at(Vec3::new(0.0, 1.0, 0.0));
@@ -69,38 +121,6 @@ impl Game for Cubes {
         }
 
         self.fly_camera(ctx);
-
-        let Some(scene) = &self.scene else { return };
-        let t = ctx.time.elapsed().as_secs_f32();
-        let renderer = &mut ctx.renderer;
-
-        renderer.draw(&scene.floor, &scene.checker, Mat4::IDENTITY);
-
-        let colors = [
-            Vec4::new(1.0, 0.35, 0.3, 1.0),
-            Vec4::new(0.35, 1.0, 0.4, 1.0),
-            Vec4::new(0.4, 0.5, 1.0, 1.0),
-        ];
-        for (i, color) in colors.into_iter().enumerate() {
-            let x = (i as f32 - 1.0) * 2.5;
-            let spin =
-                Quat::from_rotation_y(t * (0.5 + i as f32 * 0.3)) * Quat::from_rotation_x(t * 0.4);
-            let transform = Mat4::from_rotation_translation(spin, Vec3::new(x, 1.2, 0.0));
-            renderer.draw_tinted(&scene.cube, &scene.checker, transform, color);
-        }
-
-        // A flat-coloured, non-uniformly scaled box behind the cubes.
-        let pillar = Mat4::from_scale_rotation_translation(
-            Vec3::new(1.0, 4.0, 1.0),
-            Quat::IDENTITY,
-            Vec3::new(0.0, 2.0, -4.0),
-        );
-        renderer.draw_tinted(
-            &scene.cube,
-            &scene.white,
-            pillar,
-            Vec4::new(1.0, 0.8, 0.2, 1.0),
-        );
     }
 }
 

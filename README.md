@@ -9,8 +9,10 @@ Early. Working so far:
 - window, main loop with a fixed simulation step, keyboard and mouse input
 - renderer: meshes, perspective camera, textures (PNG/JPEG or raw pixels,
   with mipmaps), depth buffer, one directional light, vsync
+- entities and components (hecs ECS), parent/child transform hierarchy,
+  systems; entities with a `MeshRenderer` are drawn automatically
 
-Next: entities and scenes (ECS), then glTF asset loading.
+Next: glTF asset loading, then PBR lighting and shadows.
 
 ## Try it
 
@@ -30,6 +32,7 @@ Windows uses DirectX 12 or Vulkan, with nothing extra to install.
 - `crates/engine_core` – timing and the fixed-step clock
 - `crates/engine_platform` – window and input (winit)
 - `crates/engine_render` – renderer (wgpu)
+- `crates/engine_scene` – ECS world, transforms and hierarchy (hecs)
 
 ## License
 
