@@ -38,6 +38,7 @@ mod animation;
 mod app;
 mod assets;
 mod debug;
+mod particles;
 mod scene;
 mod scene_file;
 
@@ -51,7 +52,8 @@ pub use engine_physics::{BodyKind, Collider, Collision, Physics, RayHit, RigidBo
 pub use engine_platform::{Input, KeyCode, MouseButton, WindowConfig};
 pub use engine_render::glam as math;
 pub use engine_render::{
-    Camera, Material, Mesh, MeshData, RenderError, Renderer, Texture, Vertex, MAX_POINT_LIGHTS,
+    Camera, Material, Mesh, MeshData, ParticleBlend, RenderError, Renderer, Texture, Vertex,
+    MAX_POINT_LIGHTS,
 };
 pub use engine_scene::hecs as ecs;
 pub use engine_scene::{
@@ -60,5 +62,6 @@ pub use engine_scene::{
 };
 pub use engine_ui::egui;
 pub use log;
+pub use particles::ParticleEmitter;
 pub use scene::{DirectionalLight, MeshRenderer, PointLight};
 pub use scene_file::{MaterialDesc, SceneEntity, SceneFile, Visual};

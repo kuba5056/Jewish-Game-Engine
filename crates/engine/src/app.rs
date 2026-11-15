@@ -275,6 +275,11 @@ impl<G: Game> Runner<G> {
         crate::animation::animate(&mut ctx.world, ctx.time.delta_secs());
         engine_scene::propagate_transforms(&mut ctx.world);
         draw_world(&ctx.world, &mut ctx.renderer);
+        crate::particles::update_particles(
+            &mut ctx.world,
+            &mut ctx.renderer,
+            ctx.time.delta_secs(),
+        );
 
         if ctx
             .debug_overlay_key

@@ -12,6 +12,8 @@ struct Globals {
     view_proj: mat4x4<f32>,
     light_view_proj: mat4x4<f32>,
     camera_position: vec4<f32>,
+    camera_right: vec4<f32>,
+    camera_up: vec4<f32>,
     ambient_sky: vec4<f32>,
     ambient_ground: vec4<f32>,
     sun_direction: vec4<f32>, // xyz: direction the light travels; w: 1 if present

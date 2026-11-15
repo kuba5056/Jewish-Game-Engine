@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::app::Context;
 use crate::assets::{ModelPart, ShapeKey};
+use crate::particles::ParticleEmitter;
 use crate::scene::{DirectionalLight, MeshRenderer, PointLight};
 
 /// A material as written in a scene file.
@@ -113,6 +114,8 @@ pub struct SceneEntity {
     pub collider: Option<Collider>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rigid_body: Option<RigidBody>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub particles: Option<ParticleEmitter>,
 }
 
 /// The contents of a scene file.
@@ -176,6 +179,11 @@ impl SceneFile {
                     point_light: entity.get::<&PointLight>().map(|c| *c),
                     collider: entity.get::<&Collider>().map(|c| *c),
                     rigid_body: entity.get::<&RigidBody>().map(|c| *c),
+                    // One-off effects are transient, not part of the scene.
+                    particles: entity
+                        .get::<&ParticleEmitter>()
+                        .filter(|emitter| !emitter.despawn_when_done)
+                        .map(|emitter| (*emitter).clone()),
                 }
             })
             .collect();
@@ -207,6 +215,9 @@ impl SceneFile {
                 }
                 if let Some(body) = desc.rigid_body {
                     builder.add(body);
+                }
+                if let Some(emitter) = &desc.particles {
+                    builder.add(emitter.clone());
                 }
                 world.spawn(builder.build())
             })
@@ -369,6 +380,7 @@ mod tests {
                     transform: Transform::from_xyz(0.0, 1.0, 0.0),
                     parent: Some(1),
                     point_light: Some(PointLight::default()),
+                    particles: Some(ParticleEmitter::fire()),
                     visual: Some(Visual::Model {
                         path: "models/robot.gltf".to_owned(),
                     }),
@@ -414,6 +426,26 @@ mod tests {
         assert_eq!(ball.transform.scale, Vec3::ONE);
         assert_eq!(ball.collider.unwrap().shape, Shape::Sphere { radius: 0.5 });
         assert_eq!(ball.rigid_body, Some(RigidBody::default()));
+    }
+
+    #[test]
+    fn one_off_particle_effects_are_not_saved() {
+        let mut world = World::new();
+        world.spawn((Transform::IDENTITY, ParticleEmitter::smoke()));
+        world.spawn((Transform::IDENTITY, ParticleEmitter::burst(20)));
+        let scene = SceneFile::from_world(&world);
+        let saved: Vec<bool> = scene
+            .entities
+            .iter()
+            .map(|e| e.particles.is_some())
+            .collect();
+        assert_eq!(saved.iter().filter(|&&has| has).count(), 1);
+
+        // Emitters in hand-written files need only the fields that differ.
+        let scene = SceneFile::from_ron("(entities: [(particles: (rate: 5.0, additive: true))])");
+        let emitter = scene.unwrap().entities[0].particles.clone().unwrap();
+        assert_eq!((emitter.rate, emitter.additive), (5.0, true));
+        assert_eq!(emitter.lifetime, ParticleEmitter::default().lifetime);
     }
 
     #[test]

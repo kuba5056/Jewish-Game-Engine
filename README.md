@@ -19,6 +19,8 @@ Early. Working so far:
   files change (debug builds)
 - animation: skeletal (skinned meshes) and node animation from glTF, with
   an `AnimationPlayer` per model instance
+- particles: emitters as components (fire, smoke and burst presets or
+  custom settings), alpha-blended or additive, saved in scene files
 - physics (rapier): boxes, spheres and capsules as dynamic, kinematic or
   static bodies, collision events, sensors, raycasts
 - audio (kira): WAV/OGG/MP3/FLAC playback with volume, pitch, pan and
@@ -28,7 +30,7 @@ Early. Working so far:
 - scene files (RON): describe entities in a file, load them, and save the
   world back
 
-Possible next steps: particles, animation blending, collision with
+Possible next steps: animation blending, collision with
 arbitrary meshes, spatial audio, networking.
 
 ## Try it
@@ -39,6 +41,7 @@ cargo run --example model   # glTF model loading and hot reload
 cargo run --example physics # rigid bodies, collisions, sound
 cargo run --example scene   # scene file, debug overlay, inspector
 cargo run --example animation # skinned and node animation
+cargo run --example particles # fire, smoke, fountain, bursts
 ```
 
 In `cubes`, hold the right mouse button to look around, WASD to move.
