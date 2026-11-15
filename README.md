@@ -35,6 +35,22 @@ Early. Working so far:
 Possible next steps: undo in the editor, animation blending, collision with
 arbitrary meshes, spatial audio, networking.
 
+## Making a game with it
+
+Start from [`template/`](template): a complete starter project with one
+dependency, the engine. Copy it out of this repository and run it:
+
+```
+cp -r template ../my_game
+cd ../my_game
+cargo run
+```
+
+Then read [`docs/GUIDE.md`](docs/GUIDE.md). It covers the whole API, the
+scene and script formats, what happens in a frame, common pitfalls, and how
+to run a game without a display. AI agents should start with
+[`AGENTS.md`](AGENTS.md).
+
 ## Try it
 
 ```
@@ -102,6 +118,8 @@ cargo run --example sparkball -- --demo  # the game plays itself
 - `crates/engine_ui` – user interface (egui)
 - `crates/editor` – the scene editor
 - `assets/` – models, textures, sounds, scenes and scripts used by the examples
+- `template/` – the starter project for a new game
+- `docs/GUIDE.md` – how to build a game on the engine
 
 ## License
 

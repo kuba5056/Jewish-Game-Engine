@@ -1,0 +1,39 @@
+// The starting scene. Fields left out take their defaults; see "Scene
+// files" in the engine's docs/GUIDE.md for everything an entity can have.
+(
+    entities: [
+        (
+            name: "Sun",
+            // Shines along (-0.5, -1, -0.4).
+            transform: (rotation: (-0.432607, 0.380028, 0.207921, 0.790695)),
+            directional_light: (intensity: 3.0),
+        ),
+        (
+            name: "Floor",
+            transform: (translation: (0.0, -0.5, 0.0), scale: (20.0, 1.0, 20.0)),
+            visual: Cube(size: 1.0, material: (base_color: (0.36, 0.42, 0.38, 1.0), roughness: 0.9)),
+            collider: (friction: 0.9),
+        ),
+        (
+            name: "Player",
+            transform: (translation: (0.0, 1.0, 3.0)),
+            visual: Sphere(radius: 0.5, material: (base_color: (0.9, 0.3, 0.1, 1.0), roughness: 0.3)),
+            collider: (shape: Sphere(radius: 0.5), friction: 1.0),
+            rigid_body: (angular_damping: 0.6),
+        ),
+        (
+            name: "Crate",
+            transform: (translation: (2.5, 0.5, 0.0)),
+            visual: Cube(size: 1.0, material: (base_color: (0.72, 0.5, 0.25, 1.0))),
+            collider: (density: 0.5),
+            rigid_body: (),
+        ),
+        (
+            name: "Beacon",
+            transform: (translation: (-3.0, 1.2, -2.0)),
+            visual: Cube(size: 0.5, material: (base_color: (0.0, 0.0, 0.0, 1.0), emissive: (0.6, 2.4, 4.0))),
+            point_light: (color: (0.3, 0.8, 1.0), intensity: 3.0, range: 6.0),
+            script: "scripts/spin.rhai",
+        ),
+    ],
+)

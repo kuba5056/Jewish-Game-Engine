@@ -1,0 +1,9 @@
+[package]
+name = "my_game"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# The engine, straight from its repository. To stay on one exact version
+# instead of following `main`, add: rev = "<commit hash>".
+engine = { git = "https://github.com/kuba5056/Jewish-Game-Engine" }
