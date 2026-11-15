@@ -1,13 +1,14 @@
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use engine_core::Time;
 use engine_platform::winit::application::ApplicationHandler;
 use engine_platform::winit::dpi::LogicalSize;
 use engine_platform::winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use engine_platform::winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use engine_platform::winit::window::{Window, WindowId};
+use engine_platform::winit::window::{CursorGrabMode, Window, WindowId};
 use engine_platform::{Input, WindowConfig};
+use engine_render::{Camera, RenderError, Renderer};
 
 /// Engine start-up settings.
 #[derive(Debug, Clone)]
@@ -33,6 +34,8 @@ pub enum Error {
     EventLoop(String),
     /// The main window could not be created.
     Window(String),
+    /// Graphics could not be initialised.
+    Render(RenderError),
 }
 
 impl std::fmt::Display for Error {
@@ -40,6 +43,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::EventLoop(e) => write!(f, "event loop error: {e}"),
             Error::Window(e) => write!(f, "could not create window: {e}"),
+            Error::Render(e) => write!(f, "could not start rendering: {e}"),
         }
     }
 }
@@ -50,6 +54,10 @@ impl std::error::Error for Error {}
 pub struct Context {
     pub time: Time,
     pub input: Input,
+    /// Queue draws here during `update`; they are shown at the end of the frame.
+    pub renderer: Renderer,
+    /// The camera the frame is rendered from.
+    pub camera: Camera,
     window: Arc<Window>,
     exit_requested: bool,
 }
@@ -66,6 +74,25 @@ impl Context {
         (size.width, size.height)
     }
 
+    /// Hides the cursor and keeps it inside the window, for mouse-look.
+    /// `input.mouse_delta()` keeps reporting movement while captured.
+    pub fn set_cursor_captured(&mut self, captured: bool) {
+        if captured {
+            // Locking is unsupported on some platforms (e.g. X11); confining
+            // the cursor to the window is the next best thing.
+            let grabbed = self
+                .window
+                .set_cursor_grab(CursorGrabMode::Locked)
+                .or_else(|_| self.window.set_cursor_grab(CursorGrabMode::Confined));
+            if let Err(e) = grabbed {
+                log::warn!("could not capture the cursor: {e}");
+            }
+        } else if let Err(e) = self.window.set_cursor_grab(CursorGrabMode::None) {
+            log::warn!("could not release the cursor: {e}");
+        }
+        self.window.set_cursor_visible(!captured);
+    }
+
     /// Asks the engine to shut down after the current frame.
     pub fn exit(&mut self) {
         self.exit_requested = true;
@@ -80,7 +107,8 @@ pub trait Game {
     /// Called at the fixed simulation rate; use `ctx.time.fixed_delta_secs()`.
     fn fixed_update(&mut self, _ctx: &mut Context) {}
 
-    /// Called once per frame; use `ctx.time.delta_secs()`.
+    /// Called once per frame; use `ctx.time.delta_secs()`. Draw here with
+    /// `ctx.renderer.draw(..)`.
     fn update(&mut self, _ctx: &mut Context) {}
 
     /// Called when the window's drawable size changes (physical pixels).
@@ -141,6 +169,12 @@ impl<G: Game> Runner<G> {
         self.game.update(ctx);
         ctx.input.end_frame();
 
+        if !ctx.renderer.render(&ctx.camera) {
+            // Nothing was presented (e.g. minimised), so vsync did not pace
+            // us; sleep instead of spinning a CPU core.
+            std::thread::sleep(Duration::from_millis(16));
+        }
+
         if ctx.exit_requested {
             event_loop.exit();
         }
@@ -168,9 +202,20 @@ impl<G: Game> ApplicationHandler for Runner<G> {
         let size = window.inner_size();
         log::info!("window created: {}x{} px", size.width, size.height);
 
+        let renderer = match Renderer::new(window.clone()) {
+            Ok(renderer) => renderer,
+            Err(e) => {
+                self.error = Some(Error::Render(e));
+                event_loop.exit();
+                return;
+            }
+        };
+
         let mut ctx = Context {
             time: Time::new(self.config.fixed_hz),
             input: Input::default(),
+            renderer,
+            camera: Camera::default(),
             window,
             exit_requested: false,
         };
@@ -184,7 +229,13 @@ impl<G: Game> ApplicationHandler for Runner<G> {
         ctx.input.handle_window_event(&event);
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => self.game.resized(ctx, size.width, size.height),
+            WindowEvent::Resized(size) => {
+                ctx.renderer.resize(size.width, size.height);
+                self.game.resized(ctx, size.width, size.height);
+            }
+            // Driving frames from redraw requests keeps the game animating
+            // while the window is being dragged or resized on Windows.
+            WindowEvent::RedrawRequested => self.frame(event_loop),
             _ => {}
         }
     }
@@ -195,8 +246,10 @@ impl<G: Game> ApplicationHandler for Runner<G> {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        self.frame(event_loop);
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(ctx) = self.ctx.as_ref() {
+            ctx.window.request_redraw();
+        }
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {

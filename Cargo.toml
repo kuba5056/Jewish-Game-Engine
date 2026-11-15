@@ -10,6 +10,12 @@ license = "MIT"
 [workspace.dependencies]
 engine_core = { path = "crates/engine_core" }
 engine_platform = { path = "crates/engine_platform" }
+engine_render = { path = "crates/engine_render" }
 log = "0.4"
 env_logger = "0.11"
 winit = "0.30"
+wgpu = "30"
+glam = { version = "0.34", features = ["bytemuck"] }
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
