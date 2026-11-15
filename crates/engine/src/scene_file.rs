@@ -63,7 +63,8 @@ impl MaterialDesc {
 /// What an entity looks like, in a form that can be saved to a scene file.
 ///
 /// Spawn an entity with a `Transform` and a `Visual` and the engine gives it
-/// the matching mesh and material on the next frame.
+/// the matching mesh and material on the next frame. Changing the `Visual`
+/// later updates what is shown, and removing it removes the mesh.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Visual {
     Cube {
@@ -92,8 +93,9 @@ fn one() -> f32 {
     1.0
 }
 
-/// Marks a [`Visual`] the engine has already turned into meshes.
-struct VisualReady;
+/// Marks an entity whose [`Visual`] the engine has turned into meshes, with
+/// a copy of that `Visual` so a later change to it can be noticed.
+struct VisualReady(Visual);
 
 /// One entity in a scene file. Everything except the transform is optional.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -296,21 +298,23 @@ impl Context {
         std::fs::write(&path, text).map_err(io_error)
     }
 
-    /// Gives every entity with a new [`Visual`] its mesh and material (or
-    /// its model's entities). Run by the engine once per frame.
+    /// Makes what is shown match each entity's [`Visual`]: gives new ones
+    /// their mesh and material (or their model's entities), redoes changed
+    /// ones, and clears up after removed ones. Run by the engine each frame.
     pub(crate) fn realize_visuals(&mut self) {
-        let new: Vec<(Entity, Visual)> = self
-            .world
-            .query::<(Entity, &Visual)>()
-            .without::<&VisualReady>()
-            .iter()
-            .map(|(entity, visual)| (entity, visual.clone()))
-            .collect();
+        let stale = stale_visuals(&self.world);
+        for (entity, visual) in stale {
+            // Whatever the previous visual created goes first.
+            let _ = self.world.remove_one::<VisualReady>(entity);
+            let _ = self.world.remove_one::<MeshRenderer>(entity);
+            for part in model_parts_of(&self.world, entity) {
+                engine_scene::despawn_recursive(&mut self.world, part);
+            }
+            let Some(visual) = visual else { continue };
 
-        for (entity, visual) in new {
             // Marked first, so a visual that fails is reported once rather
             // than retried every frame.
-            let _ = self.world.insert_one(entity, VisualReady);
+            let _ = self.world.insert_one(entity, VisualReady(visual.clone()));
             let (key, desc) = match &visual {
                 Visual::Cube { size, material } => (ShapeKey::Cube(size.to_bits()), material),
                 Visual::Sphere { radius, material } => {
@@ -349,6 +353,32 @@ impl Context {
             let _ = self.world.insert_one(entity, renderer);
         }
     }
+}
+
+/// Entities whose visible form no longer matches their [`Visual`], with the
+/// `Visual` they have now (`None` if it was removed).
+fn stale_visuals(world: &World) -> Vec<(Entity, Option<Visual>)> {
+    world
+        .query::<(Entity, Option<&Visual>, Option<&VisualReady>)>()
+        .iter()
+        .filter(|(_, visual, ready)| match (visual, ready) {
+            (Some(visual), Some(ready)) => **visual != ready.0,
+            (None, None) => false,
+            _ => true,
+        })
+        .map(|(entity, visual, _)| (entity, visual.cloned()))
+        .collect()
+}
+
+/// The entities a model visual created directly under `entity`.
+fn model_parts_of(world: &World, entity: Entity) -> Vec<Entity> {
+    world
+        .query::<(Entity, &Parent)>()
+        .with::<&ModelPart>()
+        .iter()
+        .filter(|(_, parent)| parent.0 == entity)
+        .map(|(part, _)| part)
+        .collect()
 }
 
 #[cfg(test)]
@@ -455,6 +485,38 @@ mod tests {
         let emitter = scene.unwrap().entities[0].particles.clone().unwrap();
         assert_eq!((emitter.rate, emitter.additive), (5.0, true));
         assert_eq!(emitter.lifetime, ParticleEmitter::default().lifetime);
+    }
+
+    #[test]
+    fn changed_and_removed_visuals_are_noticed() {
+        let cube = |size| Visual::Cube {
+            size,
+            material: MaterialDesc::default(),
+        };
+        let mut world = World::new();
+        let fresh = world.spawn((Transform::IDENTITY, cube(1.0)));
+        let current = world.spawn((Transform::IDENTITY, cube(1.0), VisualReady(cube(1.0))));
+        let edited = world.spawn((Transform::IDENTITY, cube(2.0), VisualReady(cube(1.0))));
+        let removed = world.spawn((Transform::IDENTITY, VisualReady(cube(1.0))));
+        world.spawn((Transform::IDENTITY,));
+
+        let mut stale = stale_visuals(&world);
+        stale.sort_by_key(|(entity, _)| entity.to_bits());
+        assert_eq!(
+            stale,
+            [
+                (fresh, Some(cube(1.0))),
+                (edited, Some(cube(2.0))),
+                (removed, None)
+            ]
+        );
+        assert!(!stale.iter().any(|(entity, _)| *entity == current));
+
+        // Only direct model parts belong to an entity's visual.
+        let part = world.spawn((Transform::IDENTITY, Parent(edited), ModelPart));
+        world.spawn((Transform::IDENTITY, Parent(edited)));
+        world.spawn((Transform::IDENTITY, Parent(fresh), ModelPart));
+        assert_eq!(model_parts_of(&world, edited), [part]);
     }
 
     #[test]

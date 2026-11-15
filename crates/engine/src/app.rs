@@ -91,6 +91,8 @@ pub struct Context {
     pub physics: Physics,
     /// Sound playback.
     pub audio: Audio,
+    /// While `true`, entity scripts do not run: for pause menus and editors.
+    pub scripts_paused: bool,
     /// Queue draws here during `update`; they are shown at the end of the frame.
     pub renderer: Renderer,
     /// The camera the frame is rendered from.
@@ -128,6 +130,9 @@ impl Context {
     /// Runs entity scripts for one frame (`fixed` false) or one physics step
     /// whose new contacts are `collisions`, then does what they asked for.
     fn run_scripts(&mut self, fixed: Option<&[engine_physics::Collision]>) {
+        if self.scripts_paused {
+            return;
+        }
         let frame = Frame {
             world: &mut self.world,
             physics: &mut self.physics,
@@ -415,6 +420,7 @@ impl<G: Game> ApplicationHandler for Runner<G> {
             world: World::new(),
             physics: Physics::new(),
             audio: Audio::new(),
+            scripts_paused: false,
             renderer,
             camera: Camera::default(),
             ui,

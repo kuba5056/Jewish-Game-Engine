@@ -124,6 +124,7 @@ impl ParticleInstance {
 struct DrawCommand {
     mesh: Mesh,
     texture: Texture,
+    casts_shadow: bool,
 }
 
 /// Render targets that depend on the window size.
@@ -709,7 +710,13 @@ impl Renderer {
 
     /// Queues a mesh to be drawn this frame at `transform` (model-to-world).
     pub fn draw(&mut self, mesh: &Mesh, material: &Material, transform: Mat4) {
-        self.queue_draw(mesh, material, transform, 0.0);
+        self.queue_draw(mesh, material, transform, 0.0, true);
+    }
+
+    /// Like [`draw`](Self::draw), but the mesh casts no shadow: for helpers
+    /// such as editor handles and markers that are not part of the scene.
+    pub fn draw_without_shadow(&mut self, mesh: &Mesh, material: &Material, transform: Mat4) {
+        self.queue_draw(mesh, material, transform, 0.0, false);
     }
 
     /// Queues a skinned mesh: one whose vertices follow a skeleton.
@@ -725,10 +732,17 @@ impl Renderer {
         let first = self.joints.len() as f32 + 1.0;
         self.joints
             .extend(joint_matrices.iter().map(Mat4::to_cols_array_2d));
-        self.queue_draw(mesh, material, Mat4::IDENTITY, first);
+        self.queue_draw(mesh, material, Mat4::IDENTITY, first, true);
     }
 
-    fn queue_draw(&mut self, mesh: &Mesh, material: &Material, transform: Mat4, skin: f32) {
+    fn queue_draw(
+        &mut self,
+        mesh: &Mesh,
+        material: &Material,
+        transform: Mat4,
+        skin: f32,
+        casts_shadow: bool,
+    ) {
         let normal = Mat3::from_mat4(transform).inverse().transpose();
         self.instances.push(Instance {
             model: transform.to_cols_array_2d(),
@@ -747,6 +761,7 @@ impl Renderer {
                 .texture
                 .clone()
                 .unwrap_or_else(|| self.white.clone()),
+            casts_shadow,
         });
     }
 
@@ -986,6 +1001,7 @@ impl Renderer {
             indices: wgpu::Buffer,
             index_count: u32,
             texture: wgpu::BindGroup,
+            casts_shadow: bool,
         }
         let resolved: Vec<Resolved> = self
             .commands
@@ -997,14 +1013,19 @@ impl Renderer {
                     indices: mesh.index_buffer.clone(),
                     index_count: mesh.index_count,
                     texture: command.texture.gpu().bind_group.clone(),
+                    casts_shadow: command.casts_shadow,
                 }
             })
             .collect();
-        let draw_all = |pass: &mut wgpu::RenderPass, with_textures: bool| {
+        // `shadow_pass` draws depth only: no textures, and only shadow casters.
+        let draw_all = |pass: &mut wgpu::RenderPass, shadow_pass: bool| {
             pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             for (i, draw) in resolved.iter().enumerate() {
                 let i = i as u32;
-                if with_textures {
+                if shadow_pass && !draw.casts_shadow {
+                    continue;
+                }
+                if !shadow_pass {
                     pass.set_bind_group(1, &draw.texture, &[]);
                 }
                 pass.set_vertex_buffer(0, draw.vertices.slice(..));
@@ -1041,7 +1062,7 @@ impl Renderer {
             });
             pass.set_pipeline(&self.shadow_pipeline);
             pass.set_bind_group(0, &self.shadow_bind_group, &[]);
-            draw_all(&mut pass, false);
+            draw_all(&mut pass, true);
         }
 
         // --- Pass 2: lit scene into the HDR target -----------------------
@@ -1075,7 +1096,7 @@ impl Renderer {
             });
             pass.set_pipeline(&self.mesh_pipeline);
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
-            draw_all(&mut pass, true);
+            draw_all(&mut pass, false);
 
             // Particles go last, over the finished opaque scene.
             let alpha = self.alpha_particles.len() as u32;
@@ -1281,6 +1302,7 @@ fn upload_mesh(device: &wgpu::Device, data: &MeshData) -> MeshGpu {
         vertex_buffer,
         index_buffer,
         index_count: data.indices.len() as u32,
+        bounds: data.bounds(),
     }
 }
 

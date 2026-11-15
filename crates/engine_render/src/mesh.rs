@@ -120,6 +120,16 @@ impl MeshData {
         mesh
     }
 
+    /// The smallest axis-aligned box around all vertices, as (min, max)
+    /// corners in the mesh's own space. Both are zero for an empty mesh.
+    pub fn bounds(&self) -> (Vec3, Vec3) {
+        let mut positions = self.vertices.iter().map(|v| Vec3::from(v.position));
+        let Some(first) = positions.next() else {
+            return (Vec3::ZERO, Vec3::ZERO);
+        };
+        positions.fold((first, first), |(min, max), p| (min.min(p), max.max(p)))
+    }
+
     /// Adds a quad spanning `centre ± u ± v`; `u x v` must point along `normal`.
     fn push_quad(&mut self, centre: Vec3, u: Vec3, v: Vec3, normal: Vec3, uv_scale: f32) {
         let base = self.vertices.len() as u32;
@@ -149,6 +159,7 @@ pub(crate) struct MeshGpu {
     pub(crate) vertex_buffer: wgpu::Buffer,
     pub(crate) index_buffer: wgpu::Buffer,
     pub(crate) index_count: u32,
+    pub(crate) bounds: (Vec3, Vec3),
 }
 
 impl Mesh {
@@ -160,6 +171,11 @@ impl Mesh {
     /// exists anywhere else.
     pub fn is_unique(&self) -> bool {
         Arc::strong_count(&self.0) == 1
+    }
+
+    /// The mesh's bounding box in its own space; see [`MeshData::bounds`].
+    pub fn bounds(&self) -> (Vec3, Vec3) {
+        self.gpu().bounds
     }
 
     pub(crate) fn gpu(&self) -> MutexGuard<'_, MeshGpu> {
@@ -222,6 +238,20 @@ mod tests {
             let face_normal = (pb - pa).cross(pc - pa).normalize();
             assert!(face_normal.dot((pa + pb + pc).normalize()) > 0.9);
         }
+    }
+
+    #[test]
+    fn bounds_enclose_the_mesh() {
+        assert_eq!(
+            MeshData::cube(2.0).bounds(),
+            (Vec3::splat(-1.0), Vec3::splat(1.0))
+        );
+        let (min, max) = MeshData::plane(10.0, 1.0).bounds();
+        assert_eq!(
+            (min, max),
+            (Vec3::new(-5.0, 0.0, -5.0), Vec3::new(5.0, 0.0, 5.0))
+        );
+        assert_eq!(MeshData::default().bounds(), (Vec3::ZERO, Vec3::ZERO));
     }
 
     #[test]

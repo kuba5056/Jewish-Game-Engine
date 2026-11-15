@@ -59,7 +59,29 @@ impl Ui {
     /// interface used it (a click on a button, typing into a text field) and
     /// the game should not react to it as well.
     pub fn on_window_event(&mut self, window: &Window, event: &WindowEvent) -> bool {
-        self.input.on_window_event(window, event).consumed
+        let consumed = self.input.on_window_event(window, event).consumed;
+        match event {
+            // egui's own answer for the mouse is "always yes" when, as here,
+            // the frame is not built through its root panel, so decide here.
+            WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } => self.wants_pointer(),
+            _ => consumed,
+        }
+    }
+
+    /// Whether the mouse is over a window, menu or other piece of interface,
+    /// or is in the middle of dragging one of its widgets.
+    fn wants_pointer(&self) -> bool {
+        if self.context.egui_is_using_pointer() {
+            return true;
+        }
+        let Some(position) = self.context.input(|input| input.pointer.interact_pos()) else {
+            return false;
+        };
+        // The background layer spans the whole window and is empty here;
+        // anything above it is real interface.
+        self.context
+            .layer_id_at(position)
+            .is_some_and(|layer| layer.order != egui::Order::Background)
     }
 
     /// Starts collecting interface for a new frame.

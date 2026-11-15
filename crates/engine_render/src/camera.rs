@@ -74,6 +74,22 @@ impl Camera {
         proj::directx::perspective(self.fov_y_degrees.to_radians(), aspect, self.near, self.far)
     }
 
+    /// The ray through a pixel: where it starts (the camera) and the unit
+    /// direction it travels in, for picking what is under the mouse.
+    ///
+    /// `pixel` is measured from the top-left corner of a viewport of
+    /// `width` by `height` pixels.
+    pub fn screen_ray(&self, pixel: (f32, f32), width: f32, height: f32) -> (Vec3, Vec3) {
+        // Pixel to normalised device coordinates: x right, y up, -1..1.
+        let x = 2.0 * pixel.0 / width.max(1.0) - 1.0;
+        let y = 1.0 - 2.0 * pixel.1 / height.max(1.0);
+        let half_height = (self.fov_y_degrees.to_radians() * 0.5).tan();
+        let half_width = half_height * width / height.max(1.0);
+        let direction =
+            self.forward() + self.right() * (x * half_width) + self.up() * (y * half_height);
+        (self.position, direction.normalize())
+    }
+
     /// World-to-clip transform.
     pub fn view_projection(&self, aspect: f32) -> Mat4 {
         self.projection_matrix(aspect) * self.view_matrix()
@@ -119,6 +135,31 @@ mod tests {
         let before = camera.rotation;
         camera.look_at(camera.position);
         assert_eq!(camera.rotation, before);
+    }
+
+    #[test]
+    fn screen_ray_matches_the_projection() {
+        let mut camera = Camera {
+            position: Vec3::new(2.0, 3.0, 8.0),
+            ..Camera::default()
+        };
+        camera.look_at(Vec3::new(0.0, 1.0, 0.0));
+        let (width, height) = (1280.0, 720.0);
+
+        // The centre pixel looks straight ahead.
+        let (origin, direction) = camera.screen_ray((640.0, 360.0), width, height);
+        assert_eq!(origin, camera.position);
+        assert!(close(direction, camera.forward()));
+
+        // A point along any pixel's ray projects back onto that pixel.
+        for pixel in [(100.0, 50.0), (1200.0, 700.0), (640.0, 10.0)] {
+            let (origin, direction) = camera.screen_ray(pixel, width, height);
+            let ndc = camera
+                .view_projection(width / height)
+                .project_point3(origin + direction * 7.0);
+            let back = ((ndc.x + 1.0) * 0.5 * width, (1.0 - ndc.y) * 0.5 * height);
+            assert!((back.0 - pixel.0).abs() < 0.01 && (back.1 - pixel.1).abs() < 0.01);
+        }
     }
 
     #[test]

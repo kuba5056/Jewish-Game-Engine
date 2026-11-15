@@ -64,5 +64,5 @@ pub use engine_script::Script;
 pub use engine_ui::egui;
 pub use log;
 pub use particles::ParticleEmitter;
-pub use scene::{DirectionalLight, MeshRenderer, PointLight};
+pub use scene::{pick, DirectionalLight, MeshRenderer, PointLight};
 pub use scene_file::{MaterialDesc, SceneEntity, SceneFile, Visual};

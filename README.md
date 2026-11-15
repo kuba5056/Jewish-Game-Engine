@@ -32,7 +32,7 @@ Early. Working so far:
 - scene files (RON): describe entities in a file, load them, and save the
   world back
 
-Possible next steps: animation blending, collision with
+Possible next steps: undo in the editor, animation blending, collision with
 arbitrary meshes, spatial audio, networking.
 
 ## Try it
@@ -61,6 +61,20 @@ On NixOS, run `nix-shell` in the repository first: `shell.nix` provides all
 of the above. Graphics must be enabled in the system configuration
 (`hardware.graphics.enable = true;`).
 
+## Editor
+
+`crates/editor` is a scene editor built on the engine:
+
+```
+cargo run -p editor -- scenes/demo.ron
+```
+
+Click an object to select it and drag the coloured arrows to move it; edit
+its components in the inspector; add entities from the toolbar. "Play" runs
+the scene with physics and scripts, and "Stop" puts everything back. Hold the
+right mouse button to look around (WASD to fly), F frames the selection,
+Delete removes it, Ctrl+D duplicates, Ctrl+S saves.
+
 ## Sparkball
 
 The `sparkball` example is a small complete game built only on the engine's
@@ -86,6 +100,7 @@ cargo run --example sparkball -- --demo  # the game plays itself
 - `crates/engine_scene` – ECS world, transforms and hierarchy (hecs)
 - `crates/engine_script` – scripting (Rhai)
 - `crates/engine_ui` – user interface (egui)
+- `crates/editor` – the scene editor
 - `assets/` – models, textures, sounds, scenes and scripts used by the examples
 
 ## License
