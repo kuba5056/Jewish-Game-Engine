@@ -26,7 +26,8 @@ Early. Working so far:
 - scene files (RON): describe entities in a file, load them, and save the
   world back
 
-Next: a small complete game built on the engine.
+Possible next steps: skeletal animation, particles, collision with
+arbitrary meshes, spatial audio, networking.
 
 ## Try it
 
@@ -47,6 +48,19 @@ desktop libraries (X11 or Wayland, `libxkbcommon`) and a Vulkan driver, which
 every desktop distribution ships. Windows uses DirectX 12 or Vulkan and needs
 nothing extra.
 
+## Sparkball
+
+`games/sparkball` is a small complete game built only on the engine's public
+API: roll a ball around an arena, collect every spark before the clock runs
+out, avoid the sweeper and the edges. It has a menu, a HUD, pausing, win and
+lose screens and sound, and its level is the scene file
+`assets/scenes/arena.ron`.
+
+```
+cargo run -p sparkball            # WASD/arrows roll, Space jumps, Esc pauses
+cargo run -p sparkball -- --demo  # the game plays itself
+```
+
 ## Layout
 
 - `crates/engine` – the facade games depend on (`Game` trait, `engine::run`)
@@ -58,6 +72,8 @@ nothing extra.
 - `crates/engine_render` – renderer (wgpu)
 - `crates/engine_scene` – ECS world, transforms and hierarchy (hecs)
 - `crates/engine_ui` – user interface (egui)
+- `games/sparkball` – the example game
+- `assets/` – models, textures, sounds and scenes used by the examples and the game
 
 ## License
 

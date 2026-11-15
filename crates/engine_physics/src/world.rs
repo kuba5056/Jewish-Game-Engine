@@ -85,6 +85,11 @@ pub struct Physics {
     _force_events: Receiver<ContactForceEvent>,
     _tear_events: Receiver<SoftBodyTearEvent>,
     collisions: Vec<Collision>,
+    /// While `true`, [`step`](Self::step) does nothing, for pause menus.
+    /// Entities spawned, despawned or moved meanwhile are picked up by the
+    /// first step after unpausing; until then raycasts and velocities
+    /// describe the simulation as it was when it was paused.
+    pub paused: bool,
 }
 
 impl Default for Physics {
@@ -113,6 +118,7 @@ impl Physics {
             _force_events: force_events,
             _tear_events: tear_events,
             collisions: Vec::new(),
+            paused: false,
         }
     }
 
@@ -129,6 +135,9 @@ impl Physics {
     ///
     /// The engine calls this once per fixed step, before `fixed_update`.
     pub fn step(&mut self, world: &mut World, dt: f32) {
+        if self.paused {
+            return;
+        }
         self.remove_stale(world);
         self.add_new(world);
         self.push_moved(world);
@@ -555,6 +564,38 @@ mod tests {
         run(&mut physics, &mut world, 1.0);
         assert!((position(&world, thrown).x - 2.0).abs() < 0.05);
         assert!(position(&world, pushed).z > 0.1);
+    }
+
+    #[test]
+    fn paused_simulation_holds_still_and_catches_up_afterwards() {
+        let (mut physics, mut world) = (Physics::new(), World::new());
+        let cube = world.spawn((
+            Transform::from_xyz(0.0, 3.0, 0.0),
+            Collider::default(),
+            RigidBody::dynamic(),
+        ));
+        physics.step(&mut world, DT);
+        let before = position(&world, cube);
+
+        physics.paused = true;
+        run(&mut physics, &mut world, 1.0);
+        assert_eq!(position(&world, cube), before);
+        // Changes made during the pause take effect on the next real step.
+        let added = world.spawn((
+            Transform::from_xyz(5.0, 3.0, 0.0),
+            Collider::default(),
+            RigidBody::dynamic(),
+        ));
+        world.get::<&mut Transform>(cube).unwrap().translation.y = 6.0;
+        run(&mut physics, &mut world, 0.5);
+        assert_eq!(position(&world, cube).y, 6.0);
+        assert_eq!(position(&world, added).y, 3.0);
+
+        physics.paused = false;
+        run(&mut physics, &mut world, 0.5);
+        let resumed = position(&world, cube).y;
+        assert!(resumed < 6.0 && resumed > 3.0, "{resumed}");
+        assert!(position(&world, added).y < 3.0);
     }
 
     #[test]

@@ -53,8 +53,8 @@ pub use engine_render::{
 };
 pub use engine_scene::hecs as ecs;
 pub use engine_scene::{
-    despawn_recursive, propagate_transforms, Entity, GlobalTransform, Name, Parent, Transform,
-    World,
+    despawn_recursive, find_by_name, propagate_transforms, Entity, GlobalTransform, Name, Parent,
+    Transform, World,
 };
 pub use engine_ui::egui;
 pub use log;

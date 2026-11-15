@@ -1,0 +1,87 @@
+// The Sparkball arena. The game looks entities up by name:
+//   "Start"   - where the ball appears (transform only)
+//   "Cell"    - a spark to collect (transform only; the game adds the rest)
+//   "Sweeper" - a kinematic body the game spins around its Y axis
+(
+    entities: [
+        (
+            name: "Sun",
+            // Shines along (-0.5, -1, -0.4).
+            transform: (rotation: (-0.432607, 0.380028, 0.207921, 0.790695)),
+            directional_light: (intensity: 3.0),
+        ),
+        (name: "Start", transform: (translation: (0.0, 1.0, 8.5))),
+
+        // --- Ground --------------------------------------------------------
+        (
+            name: "Floor",
+            transform: (translation: (0.0, -0.5, 0.0), scale: (24.0, 1.0, 24.0)),
+            visual: Cube(size: 1.0, material: (base_color: (0.36, 0.42, 0.38, 1.0), roughness: 0.9)),
+            collider: (friction: 0.9),
+        ),
+        (
+            name: "Bridge",
+            transform: (translation: (0.0, -0.5, 16.0), scale: (2.0, 1.0, 8.0)),
+            visual: Cube(size: 1.0, material: (base_color: (0.5, 0.42, 0.3, 1.0), roughness: 0.9)),
+            collider: (friction: 0.9),
+        ),
+        (
+            name: "Island",
+            transform: (translation: (0.0, -0.5, 22.5), scale: (5.0, 1.0, 5.0)),
+            visual: Cube(size: 1.0, material: (base_color: (0.36, 0.42, 0.38, 1.0), roughness: 0.9)),
+            collider: (friction: 0.9),
+        ),
+        (
+            name: "North wall",
+            transform: (translation: (0.0, 0.5, -12.25), scale: (24.0, 1.0, 0.5)),
+            visual: Cube(size: 1.0, material: (base_color: (0.3, 0.3, 0.34, 1.0))),
+            collider: (),
+        ),
+
+        // --- Raised platform with a ramp -----------------------------------
+        (
+            name: "Platform",
+            transform: (translation: (8.0, 0.75, -8.0), scale: (4.0, 1.5, 4.0)),
+            visual: Cube(size: 1.0, material: (base_color: (0.3, 0.3, 0.34, 1.0))),
+            collider: (friction: 0.9),
+        ),
+        (
+            name: "Ramp",
+            // Tilted 20 degrees about Z, rising towards the platform.
+            transform: (translation: (3.95, 0.66, -8.0), rotation: (0.0, 0.0, 0.173648, 0.984808), scale: (4.6, 0.2, 2.6)),
+            visual: Cube(size: 1.0, material: (base_color: (0.5, 0.42, 0.3, 1.0), roughness: 0.9)),
+            collider: (friction: 0.9),
+        ),
+
+        // --- Hazard --------------------------------------------------------
+        (
+            name: "Sweeper",
+            transform: (translation: (0.0, 0.45, 0.0), scale: (11.0, 0.5, 0.5)),
+            visual: Cube(size: 1.0, material: (base_color: (0.85, 0.15, 0.1, 1.0), metallic: 1.0, roughness: 0.35)),
+            collider: (),
+            rigid_body: (kind: Kinematic),
+        ),
+        (
+            name: "Hub",
+            transform: (translation: (0.0, 0.5, 0.0), scale: (0.9, 1.0, 0.9)),
+            visual: Cube(size: 1.0, material: (base_color: (0.3, 0.3, 0.34, 1.0), metallic: 1.0, roughness: 0.4)),
+        ),
+
+        // --- Crates in the way of a spark ----------------------------------
+        (name: "Crate", transform: (translation: (-8.4, 0.5, -6.6)), visual: Cube(size: 1.0, material: (base_color: (0.72, 0.5, 0.25, 1.0))), collider: (density: 0.4), rigid_body: ()),
+        (name: "Crate", transform: (translation: (-9.5, 0.5, -6.6)), visual: Cube(size: 1.0, material: (base_color: (0.66, 0.46, 0.22, 1.0))), collider: (density: 0.4), rigid_body: ()),
+        (name: "Crate", transform: (translation: (-10.6, 0.5, -6.6)), visual: Cube(size: 1.0, material: (base_color: (0.72, 0.5, 0.25, 1.0))), collider: (density: 0.4), rigid_body: ()),
+        (name: "Crate", transform: (translation: (-8.95, 1.5, -6.6)), visual: Cube(size: 1.0, material: (base_color: (0.78, 0.55, 0.28, 1.0))), collider: (density: 0.4), rigid_body: ()),
+        (name: "Crate", transform: (translation: (-10.05, 1.5, -6.6)), visual: Cube(size: 1.0, material: (base_color: (0.66, 0.46, 0.22, 1.0))), collider: (density: 0.4), rigid_body: ()),
+
+        // --- Sparks --------------------------------------------------------
+        (name: "Cell", transform: (translation: (8.0, 2.3, -8.0))),
+        (name: "Cell", transform: (translation: (-9.5, 0.8, -9.0))),
+        (name: "Cell", transform: (translation: (0.0, 0.8, 22.5))),
+        (name: "Cell", transform: (translation: (9.0, 0.8, 6.0))),
+        (name: "Cell", transform: (translation: (-9.0, 0.8, 7.0))),
+        (name: "Cell", transform: (translation: (0.0, 0.8, -3.5))),
+        (name: "Cell", transform: (translation: (3.5, 0.8, 1.5))),
+        (name: "Cell", transform: (translation: (10.5, 0.8, -2.5))),
+    ],
+)

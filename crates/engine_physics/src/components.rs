@@ -90,6 +90,7 @@ pub enum Shape {
 /// The entity's `Transform` scale is applied to the shape once, when the
 /// entity first enters the simulation.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Collider {
     pub shape: Shape,
     /// 0 is ice, 1 is rubber on concrete.
@@ -101,6 +102,13 @@ pub struct Collider {
     /// A sensor detects overlaps (reported as collisions) without being
     /// solid: a trigger zone or pickup.
     pub sensor: bool,
+}
+
+/// A 1x1x1 box, which the entity's `Transform` scale stretches to size.
+impl Default for Collider {
+    fn default() -> Self {
+        Self::cuboid(Vec3::ONE)
+    }
 }
 
 impl Collider {
