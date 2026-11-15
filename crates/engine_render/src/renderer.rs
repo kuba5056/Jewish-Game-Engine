@@ -79,6 +79,23 @@ impl Instance {
     ];
 }
 
+/// Something drawn on top of the finished frame, such as a user interface.
+pub trait Overlay {
+    /// Called before any pass, to upload what [`paint`](Self::paint) needs.
+    /// `size` is the drawable size in pixels. Returned command buffers are
+    /// submitted ahead of the frame's own.
+    fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        size: [u32; 2],
+    ) -> Vec<wgpu::CommandBuffer>;
+
+    /// Draws into the window's colour target, after tone mapping.
+    fn paint(&mut self, pass: &mut wgpu::RenderPass<'static>);
+}
+
 struct DrawCommand {
     mesh: Mesh,
     texture: Texture,
@@ -178,10 +195,12 @@ impl Renderer {
         let mut config = surface
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or_else(|| RenderError::Surface("adapter cannot present to it".to_owned()))?;
-        // An sRGB target makes the GPU convert our linear colours for display.
+        // Prefer a target without automatic sRGB conversion and encode in the
+        // tone-mapping shader instead: overlays such as egui blend in display
+        // space and expect exactly that kind of target.
         let formats = surface.get_capabilities(&adapter).formats;
-        if let Some(srgb) = formats.iter().copied().find(|f| f.is_srgb()) {
-            config.format = srgb;
+        if let Some(plain) = formats.iter().copied().find(|f| !f.is_srgb()) {
+            config.format = plain;
         }
         config.present_mode = wgpu::PresentMode::AutoVsync;
         surface.configure(&device, &config);
@@ -546,6 +565,26 @@ impl Renderer {
         )
     }
 
+    /// The graphics device, for code that draws with `wgpu` directly.
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    /// The queue commands and uploads for [`device`](Self::device) go through.
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
+    /// Pixel format of the window's colour target.
+    pub fn surface_format(&self) -> wgpu::TextureFormat {
+        self.config.format
+    }
+
+    /// Number of meshes queued for the current frame so far.
+    pub fn queued_draws(&self) -> usize {
+        self.commands.len()
+    }
+
     /// A plain white texture.
     pub fn white_texture(&self) -> Texture {
         self.white.clone()
@@ -632,12 +671,13 @@ impl Renderer {
         );
     }
 
-    /// Renders everything queued since the last call and presents it.
+    /// Renders everything queued since the last call, then `overlay` on top,
+    /// and presents the frame.
     ///
     /// Returns `false` if no frame was shown (window hidden or being resized);
     /// the caller should then pace itself, as vsync did not block.
-    pub fn render(&mut self, camera: &Camera) -> bool {
-        let presented = self.render_queued(camera);
+    pub fn render(&mut self, camera: &Camera, overlay: Option<&mut dyn Overlay>) -> bool {
+        let presented = self.render_queued(camera, overlay);
         self.commands.clear();
         self.instances.clear();
         self.sun = None;
@@ -645,7 +685,7 @@ impl Renderer {
         presented
     }
 
-    fn render_queued(&mut self, camera: &Camera) -> bool {
+    fn render_queued(&mut self, camera: &Camera, mut overlay: Option<&mut dyn Overlay>) -> bool {
         use wgpu::CurrentSurfaceTexture as Current;
         let (frame, suboptimal) = match self.surface.get_current_texture() {
             Current::Success(frame) => (frame, false),
@@ -711,7 +751,17 @@ impl Renderer {
         self.queue.write_buffer(
             &self.tonemap_buffer,
             0,
-            bytemuck::bytes_of(&[self.exposure, 0.0, 0.0, 0.0]),
+            bytemuck::bytes_of(&[
+                self.exposure,
+                // Whether the shader must sRGB-encode (the target does not).
+                if self.config.format.is_srgb() {
+                    0.0
+                } else {
+                    1.0
+                },
+                0.0,
+                0.0,
+            ]),
         );
 
         if self.instances.len() > self.instance_capacity {
@@ -759,6 +809,15 @@ impl Renderer {
         };
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
+        let overlay_commands = match overlay.as_deref_mut() {
+            Some(overlay) => overlay.prepare(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                [self.config.width, self.config.height],
+            ),
+            None => Vec::new(),
+        };
 
         // --- Pass 1: scene depth as seen from the sun --------------------
         if shadow_sun.is_some() {
@@ -814,10 +873,10 @@ impl Renderer {
             draw_all(&mut pass, true);
         }
 
-        // --- Pass 3: tone map to the window ------------------------------
+        // --- Pass 3: tone map to the window, then the overlay ------------
         let view = frame.texture.create_view(&Default::default());
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("tonemap pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -830,12 +889,19 @@ impl Renderer {
                 })],
                 ..Default::default()
             });
+            // Overlays take a pass that is not tied to the encoder's borrow;
+            // it is still dropped before the encoder is finished below.
+            let mut pass = pass.forget_lifetime();
             pass.set_pipeline(&self.tonemap_pipeline);
             pass.set_bind_group(0, &self.targets.tonemap_bind_group, &[]);
             pass.draw(0..3, 0..1);
+            if let Some(overlay) = overlay {
+                overlay.paint(&mut pass);
+            }
         }
 
-        self.queue.submit([encoder.finish()]);
+        self.queue
+            .submit(overlay_commands.into_iter().chain([encoder.finish()]));
         self.queue.present(frame);
 
         if suboptimal {

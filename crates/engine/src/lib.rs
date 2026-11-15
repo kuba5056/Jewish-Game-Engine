@@ -36,10 +36,12 @@
 
 mod app;
 mod assets;
+mod debug;
 mod scene;
+mod scene_file;
 
 pub use app::{run, Config, Context, Error, Game, System};
-pub use assets::Model;
+pub use assets::{Model, ModelPart};
 pub use engine_assets::AssetError;
 pub use engine_audio::{Audio, Playback, Sound, SoundHandle};
 pub use engine_core::Time;
@@ -54,5 +56,7 @@ pub use engine_scene::{
     despawn_recursive, propagate_transforms, Entity, GlobalTransform, Name, Parent, Transform,
     World,
 };
+pub use engine_ui::egui;
 pub use log;
 pub use scene::{DirectionalLight, MeshRenderer, PointLight};
+pub use scene_file::{MaterialDesc, SceneEntity, SceneFile, Visual};

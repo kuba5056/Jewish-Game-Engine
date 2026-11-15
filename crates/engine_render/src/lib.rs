@@ -20,5 +20,6 @@ pub use glam;
 pub use light::MAX_POINT_LIGHTS;
 pub use material::Material;
 pub use mesh::{Mesh, MeshData, Vertex};
-pub use renderer::{RenderError, Renderer};
+pub use renderer::{Overlay, RenderError, Renderer};
 pub use texture::{Texture, WeakTexture};
+pub use wgpu;

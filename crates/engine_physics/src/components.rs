@@ -1,7 +1,8 @@
 use glam::Vec3;
+use serde::{Deserialize, Serialize};
 
 /// How a body takes part in the simulation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BodyKind {
     /// Moved by gravity, collisions and impulses.
     #[default]
@@ -14,7 +15,8 @@ pub enum BodyKind {
 }
 
 /// Makes an entity with a [`Collider`] move under physics.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RigidBody {
     pub kind: BodyKind,
     /// Velocity the body starts with, in units per second.
@@ -65,7 +67,7 @@ impl RigidBody {
 }
 
 /// A collision shape, centred on the entity's position.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Shape {
     /// A box; `half_extents` is half its size along each axis.
     Box {
@@ -87,7 +89,7 @@ pub enum Shape {
 ///
 /// The entity's `Transform` scale is applied to the shape once, when the
 /// entity first enters the simulation.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Collider {
     pub shape: Shape,
     /// 0 is ice, 1 is rubber on concrete.

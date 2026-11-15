@@ -3,7 +3,8 @@ use glam::{Mat4, Quat, Vec3};
 
 /// Position, rotation and scale of an entity, relative to its parent
 /// (or to the world, if it has none).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Transform {
     pub translation: Vec3,
     pub rotation: Quat,

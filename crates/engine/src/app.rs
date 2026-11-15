@@ -11,11 +11,13 @@ use engine_platform::winit::dpi::LogicalSize;
 use engine_platform::winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use engine_platform::winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use engine_platform::winit::window::{CursorGrabMode, Window, WindowId};
-use engine_platform::{Input, WindowConfig};
+use engine_platform::{Input, KeyCode, WindowConfig};
 use engine_render::{Camera, RenderError, Renderer, Texture};
 use engine_scene::World;
+use engine_ui::{egui, Ui};
 
 use crate::assets::{Assets, Model};
+use crate::debug::DebugUi;
 use crate::scene::draw_world;
 
 /// Engine start-up settings.
@@ -30,6 +32,11 @@ pub struct Config {
     /// Reload textures and models when their files change on disk.
     /// On by default in debug builds only.
     pub hot_reload: bool,
+    /// Key that shows and hides the debug overlay (statistics, entity list,
+    /// inspector); `None` disables it.
+    pub debug_overlay_key: Option<KeyCode>,
+    /// Start with the debug overlay visible.
+    pub show_debug_overlay: bool,
 }
 
 impl Default for Config {
@@ -39,6 +46,8 @@ impl Default for Config {
             fixed_hz: 60,
             asset_dir: PathBuf::from("assets"),
             hot_reload: cfg!(debug_assertions),
+            debug_overlay_key: Some(KeyCode::F3),
+            show_debug_overlay: false,
         }
     }
 }
@@ -86,7 +95,10 @@ pub struct Context {
     /// The camera the frame is rendered from.
     pub camera: Camera,
     window: Arc<Window>,
-    assets: Assets,
+    pub(crate) assets: Assets,
+    ui: Ui,
+    debug: Option<DebugUi>,
+    debug_overlay_key: Option<KeyCode>,
     exit_requested: bool,
     systems: Vec<System>,
     fixed_systems: Vec<System>,
@@ -131,6 +143,25 @@ impl Context {
     pub fn window_size(&self) -> (u32, u32) {
         let size = self.window.inner_size();
         (size.width, size.height)
+    }
+
+    /// The context for building user interface with `egui`: menus, HUD,
+    /// tools. Use it during `update` (or in systems), every frame the
+    /// interface should be visible:
+    ///
+    /// ```no_run
+    /// # fn update(ctx: &mut engine::Context) {
+    /// engine::egui::Window::new("Menu").show(&ctx.ui(), |ui| {
+    ///     if ui.button("Quit").clicked() {
+    ///         ctx.exit();
+    ///     }
+    /// });
+    /// # }
+    /// ```
+    ///
+    /// Clicks and key presses the interface uses are hidden from `ctx.input`.
+    pub fn ui(&self) -> egui::Context {
+        self.ui.context().clone()
     }
 
     /// Hides the cursor and keeps it inside the window, for mouse-look.
@@ -226,6 +257,7 @@ impl<G: Game> Runner<G> {
         self.last_frame = now;
 
         ctx.assets.maintain(&ctx.renderer, ctx.time.delta_secs());
+        ctx.ui.begin_frame(&ctx.window);
 
         while ctx.time.step_fixed() {
             // Stepping first lets fixed_update react to this step's
@@ -237,13 +269,29 @@ impl<G: Game> Runner<G> {
         }
         self.game.update(ctx);
         run_systems(ctx, |ctx| &ctx.systems);
-        ctx.input.end_frame();
         ctx.physics.clear_collisions();
 
+        ctx.realize_visuals();
         engine_scene::propagate_transforms(&mut ctx.world);
         draw_world(&ctx.world, &mut ctx.renderer);
 
-        if !ctx.renderer.render(&ctx.camera) {
+        if ctx
+            .debug_overlay_key
+            .is_some_and(|key| ctx.input.key_pressed(key))
+        {
+            if let Some(debug) = &mut ctx.debug {
+                debug.open = !debug.open;
+            }
+        }
+        // Taken out while it draws, as it needs the whole context.
+        if let Some(mut debug) = ctx.debug.take() {
+            debug.draw(ctx);
+            ctx.debug = Some(debug);
+        }
+        ctx.input.end_frame();
+
+        ctx.ui.end_frame(&ctx.window, &ctx.renderer);
+        if !ctx.renderer.render(&ctx.camera, Some(&mut ctx.ui)) {
             // Nothing was presented (e.g. minimised), so vsync did not pace
             // us; sleep instead of spinning a CPU core.
             std::thread::sleep(Duration::from_millis(16));
@@ -295,6 +343,8 @@ impl<G: Game> ApplicationHandler for Runner<G> {
             }
         };
 
+        let ui = Ui::new(&window, &renderer);
+
         let mut ctx = Context {
             time: Time::new(self.config.fixed_hz),
             input: Input::default(),
@@ -303,6 +353,9 @@ impl<G: Game> ApplicationHandler for Runner<G> {
             audio: Audio::new(),
             renderer,
             camera: Camera::default(),
+            ui,
+            debug: Some(DebugUi::new(self.config.show_debug_overlay)),
+            debug_overlay_key: self.config.debug_overlay_key,
             window,
             assets: Assets::new(&self.config.asset_dir, self.config.hot_reload),
             exit_requested: false,
@@ -316,7 +369,20 @@ impl<G: Game> ApplicationHandler for Runner<G> {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(ctx) = self.ctx.as_mut() else { return };
-        ctx.input.handle_window_event(&event);
+        // Presses the interface used (a click on a button, typing in a text
+        // field) must not also reach the game. Everything else still does,
+        // releases included, so a key cannot get stuck down.
+        let used_by_ui = ctx.ui.on_window_event(&ctx.window, &event);
+        let is_press = matches!(
+            &event,
+            WindowEvent::KeyboardInput { event, .. } if event.state.is_pressed()
+        ) || matches!(
+            &event,
+            WindowEvent::MouseInput { state, .. } if state.is_pressed()
+        ) || matches!(&event, WindowEvent::MouseWheel { .. });
+        if !(used_by_ui && is_press) {
+            ctx.input.handle_window_event(&event);
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {

@@ -21,8 +21,12 @@ Early. Working so far:
   static bodies, collision events, sensors, raycasts
 - audio (kira): WAV/OGG/MP3/FLAC playback with volume, pitch, pan and
   looping; runs silently when there is no audio device
+- user interface (egui) for game menus and tools, plus a built-in debug
+  overlay (F3): frame statistics, entity list, inspector
+- scene files (RON): describe entities in a file, load them, and save the
+  world back
 
-Next: debug tools and scene files, then a small complete game.
+Next: a small complete game built on the engine.
 
 ## Try it
 
@@ -30,6 +34,7 @@ Next: debug tools and scene files, then a small complete game.
 cargo run --example cubes   # entities, hierarchy, materials, lights, fly camera
 cargo run --example model   # glTF model loading and hot reload
 cargo run --example physics # rigid bodies, collisions, sound
+cargo run --example scene   # scene file, debug overlay, inspector
 ```
 
 In `cubes`, hold the right mouse button to look around, WASD to move.
@@ -52,6 +57,7 @@ nothing extra.
 - `crates/engine_platform` – window and input (winit)
 - `crates/engine_render` – renderer (wgpu)
 - `crates/engine_scene` – ECS world, transforms and hierarchy (hecs)
+- `crates/engine_ui` – user interface (egui)
 
 ## License
 

@@ -1,6 +1,7 @@
 use engine_render::glam::Vec3;
 use engine_render::{Material, Mesh, Renderer};
 use engine_scene::{GlobalTransform, World};
+use serde::{Deserialize, Serialize};
 
 /// Makes an entity visible: the engine draws `mesh` with `material` at the
 /// entity's `Transform` every frame.
@@ -15,7 +16,8 @@ pub struct MeshRenderer {
 /// It shines along the entity's forward direction (its local -Z axis); the
 /// entity's position does not matter. Aim it with
 /// `Transform::IDENTITY.looking_to(direction)`. Only one is used per frame.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DirectionalLight {
     /// Linear RGB.
     pub color: Vec3,
@@ -34,7 +36,8 @@ impl Default for DirectionalLight {
 
 /// A light shining in all directions from the entity's position, like a
 /// bulb. It casts no shadows. At most `MAX_POINT_LIGHTS` are used per frame.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PointLight {
     /// Linear RGB.
     pub color: Vec3,

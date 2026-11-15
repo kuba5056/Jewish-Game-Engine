@@ -6,7 +6,7 @@ use std::time::SystemTime;
 use engine_assets::{load_image, load_model, AssetError, ModelData};
 use engine_audio::Sound;
 use engine_render::glam::{Vec3, Vec4};
-use engine_render::{Material, Mesh, Renderer, Texture, WeakTexture};
+use engine_render::{Material, Mesh, MeshData, Renderer, Texture, WeakTexture};
 use engine_scene::hecs::EntityBuilder;
 use engine_scene::{Entity, Name, Parent, Transform, World};
 
@@ -137,6 +137,13 @@ impl Model {
     /// the whole thing with `despawn_recursive(world, root)`.
     pub fn spawn(&self, world: &mut World, transform: Transform) -> Entity {
         let root = world.spawn((transform,));
+        self.spawn_under(world, root);
+        root
+    }
+
+    /// Like [`spawn`](Self::spawn), but attaches the model's nodes to an
+    /// existing entity instead of creating a root.
+    pub fn spawn_under(&self, world: &mut World, root: Entity) {
         let mut entities: Vec<Entity> = Vec::with_capacity(self.0.nodes.len());
         for node in &self.0.nodes {
             let parent = node.parent.map_or(root, |index| entities[index]);
@@ -150,7 +157,10 @@ impl Model {
             };
 
             let mut builder = EntityBuilder::new();
-            builder.add(node.transform).add(Parent(parent));
+            builder
+                .add(node.transform)
+                .add(Parent(parent))
+                .add(ModelPart);
             if let Some(name) = &node.name {
                 builder.add(Name(name.clone()));
             }
@@ -161,13 +171,22 @@ impl Model {
             }
             let entity = world.spawn(builder.build());
             for extra in primitives.iter().skip(1) {
-                world.spawn((Transform::IDENTITY, Parent(entity), renderer(extra)));
+                world.spawn((
+                    Transform::IDENTITY,
+                    Parent(entity),
+                    ModelPart,
+                    renderer(extra),
+                ));
             }
             entities.push(entity);
         }
-        root
     }
 }
+
+/// Marks an entity created from a model's node. Such entities are recreated
+/// from the model file, so saved scenes leave them out.
+#[derive(Debug, Clone, Copy)]
+pub struct ModelPart;
 
 /// A file being watched, with the modification time it was last loaded at.
 struct Watched {
@@ -215,6 +234,16 @@ pub(crate) struct Assets {
     /// Kept for the whole run: decoded sounds are small and there is no way
     /// to tell whether one will be played again.
     sounds: HashMap<PathBuf, Sound>,
+    /// Built-in shapes by their parameters, so equal shapes share one mesh.
+    shapes: HashMap<ShapeKey, Mesh>,
+}
+
+/// Identifies a built-in shape; floats are stored as bits to be hashable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ShapeKey {
+    Cube(u32),
+    Sphere(u32),
+    Plane(u32, u32),
 }
 
 impl Assets {
@@ -228,6 +257,7 @@ impl Assets {
             textures: HashMap::new(),
             models: HashMap::new(),
             sounds: HashMap::new(),
+            shapes: HashMap::new(),
         }
     }
 
@@ -265,6 +295,27 @@ impl Assets {
         };
         self.models.insert(path, entry);
         Ok(model)
+    }
+
+    /// The asset directory, for files the engine reads and writes itself.
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub(crate) fn shape(&mut self, renderer: &Renderer, key: ShapeKey) -> Mesh {
+        self.shapes
+            .entry(key)
+            .or_insert_with(|| {
+                let data = match key {
+                    ShapeKey::Cube(size) => MeshData::cube(f32::from_bits(size)),
+                    ShapeKey::Sphere(radius) => MeshData::sphere(f32::from_bits(radius), 32),
+                    ShapeKey::Plane(size, repeat) => {
+                        MeshData::plane(f32::from_bits(size), f32::from_bits(repeat))
+                    }
+                };
+                renderer.create_mesh(&data)
+            })
+            .clone()
     }
 
     pub(crate) fn sound(&mut self, path: &Path) -> Result<Sound, AssetError> {

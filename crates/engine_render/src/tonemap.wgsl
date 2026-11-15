@@ -1,7 +1,8 @@
 // Final pass: HDR scene colour to the displayable range.
 
 struct Params {
-    exposure: vec4<f32>, // x: exposure multiplier
+    // x: exposure multiplier, y: 1 if the target needs sRGB encoding here
+    exposure: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -21,8 +22,19 @@ fn aces(x: vec3<f32>) -> vec3<f32> {
                  vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
+// Linear to sRGB, for targets that do not convert automatically.
+fn srgb_encode(linear: vec3<f32>) -> vec3<f32> {
+    let low = linear * 12.92;
+    let high = 1.055 * pow(linear, vec3<f32>(1.0 / 2.4)) - 0.055;
+    return select(high, low, linear <= vec3<f32>(0.0031308));
+}
+
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let hdr = textureLoad(hdr_texture, vec2<i32>(position.xy), 0).rgb;
-    return vec4<f32>(aces(hdr * params.exposure.x), 1.0);
+    let mapped = aces(hdr * params.exposure.x);
+    if params.exposure.y > 0.5 {
+        return vec4<f32>(srgb_encode(mapped), 1.0);
+    }
+    return vec4<f32>(mapped, 1.0);
 }

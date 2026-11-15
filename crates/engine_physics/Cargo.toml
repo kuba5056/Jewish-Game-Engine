@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+serde.workspace = true
 engine_scene.workspace = true
 glam.workspace = true
 log.workspace = true
