@@ -25,9 +25,20 @@ impl Default for Camera {
 }
 
 impl Camera {
-    /// Turns the camera to face `target`, keeping world Y as up.
+    /// Turns the camera to face `target`, keeping world Y as up. Does
+    /// nothing if `target` is where the camera already is.
     pub fn look_at(&mut self, target: Vec3) {
-        let view = view::look_at_mat4(self.position, target, Vec3::Y);
+        let Some(direction) = (target - self.position).try_normalize() else {
+            return;
+        };
+        // Looking straight up or down leaves "up" undefined; any horizontal
+        // axis will do there.
+        let up = if direction.y.abs() > 0.999 {
+            Vec3::NEG_Z
+        } else {
+            Vec3::Y
+        };
+        let view = view::look_to_mat4(self.position, direction, up);
         self.rotation = Quat::from_mat4(&view.inverse());
     }
 
@@ -93,6 +104,21 @@ mod tests {
         };
         camera.look_at(Vec3::ZERO);
         assert!(close(camera.forward(), (-camera.position).normalize()));
+    }
+
+    #[test]
+    fn look_at_handles_straight_down_and_a_zero_distance() {
+        let mut camera = Camera {
+            position: Vec3::new(0.0, 10.0, 0.0),
+            ..Camera::default()
+        };
+        camera.look_at(Vec3::ZERO);
+        assert!(close(camera.forward(), Vec3::NEG_Y));
+        assert!(camera.view_matrix().is_finite());
+
+        let before = camera.rotation;
+        camera.look_at(camera.position);
+        assert_eq!(camera.rotation, before);
     }
 
     #[test]

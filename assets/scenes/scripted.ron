@@ -1,0 +1,44 @@
+// A small game made of data only: this scene plus the scripts it names.
+// Roll the ball (WASD or arrows, Space to jump) and collect the coins.
+(
+    entities: [
+        (
+            name: "Sun",
+            // Shines along (-0.5, -1, -0.4).
+            transform: (rotation: (-0.432607, 0.380028, 0.207921, 0.790695)),
+            directional_light: (intensity: 3.0),
+        ),
+        (
+            name: "Floor",
+            transform: (translation: (0.0, -0.5, 0.0), scale: (18.0, 1.0, 12.0)),
+            visual: Cube(size: 1.0, material: (base_color: (0.36, 0.42, 0.38, 1.0), roughness: 0.9)),
+            collider: (friction: 0.9),
+        ),
+        (
+            name: "Ledge",
+            transform: (translation: (11.0, 1.0, -2.0), scale: (4.0, 0.5, 4.0)),
+            visual: Cube(size: 1.0, material: (base_color: (0.3, 0.3, 0.34, 1.0))),
+            collider: (friction: 0.9),
+        ),
+        (
+            name: "Platform",
+            transform: (translation: (4.0, 0.25, -2.0), scale: (2.5, 0.5, 2.5)),
+            visual: Cube(size: 1.0, material: (base_color: (0.85, 0.5, 0.1, 1.0), metallic: 1.0, roughness: 0.4)),
+            collider: (friction: 1.0),
+            rigid_body: (kind: Kinematic),
+            script: "scripts/platform.rhai",
+        ),
+        (
+            name: "Player",
+            transform: (translation: (-6.0, 1.0, 2.0)),
+            visual: Sphere(radius: 0.4, material: (texture: "textures/ball.png", roughness: 0.35)),
+            collider: (shape: Sphere(radius: 0.4), friction: 1.0),
+            rigid_body: (angular_damping: 0.6),
+            script: "scripts/player.rhai",
+        ),
+        (name: "Coin", transform: (translation: (-3.0, 0.7, 2.0)), visual: Cube(size: 0.45, material: (base_color: (0.0, 0.0, 0.0, 1.0), emissive: (4.0, 2.8, 0.4))), collider: (shape: Sphere(radius: 0.6), sensor: true), point_light: (color: (1.0, 0.8, 0.2), intensity: 2.0, range: 4.0), script: "scripts/coin.rhai"),
+        (name: "Coin", transform: (translation: (0.0, 0.7, -3.0)), visual: Cube(size: 0.45, material: (base_color: (0.0, 0.0, 0.0, 1.0), emissive: (4.0, 2.8, 0.4))), collider: (shape: Sphere(radius: 0.6), sensor: true), point_light: (color: (1.0, 0.8, 0.2), intensity: 2.0, range: 4.0), script: "scripts/coin.rhai"),
+        (name: "Coin", transform: (translation: (6.0, 0.7, 3.0)), visual: Cube(size: 0.45, material: (base_color: (0.0, 0.0, 0.0, 1.0), emissive: (4.0, 2.8, 0.4))), collider: (shape: Sphere(radius: 0.6), sensor: true), point_light: (color: (1.0, 0.8, 0.2), intensity: 2.0, range: 4.0), script: "scripts/coin.rhai"),
+        (name: "Coin", transform: (translation: (11.0, 2.0, -2.0)), visual: Cube(size: 0.45, material: (base_color: (0.0, 0.0, 0.0, 1.0), emissive: (4.0, 2.8, 0.4))), collider: (shape: Sphere(radius: 0.6), sensor: true), point_light: (color: (1.0, 0.8, 0.2), intensity: 2.0, range: 4.0), script: "scripts/coin.rhai"),
+    ],
+)

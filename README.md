@@ -21,6 +21,8 @@ Early. Working so far:
   an `AnimationPlayer` per model instance
 - particles: emitters as components (fire, smoke and burst presets or
   custom settings), alpha-blended or additive, saved in scene files
+- scripting: game logic in Rhai script files attached to entities, with
+  access to transforms, input, physics, sound and scenes; reloaded on change
 - physics (rapier): boxes, spheres and capsules as dynamic, kinematic or
   static bodies, collision events, sensors, raycasts
 - audio (kira): WAV/OGG/MP3/FLAC playback with volume, pitch, pan and
@@ -42,6 +44,7 @@ cargo run --example physics # rigid bodies, collisions, sound
 cargo run --example scene   # scene file, debug overlay, inspector
 cargo run --example animation # skinned and node animation
 cargo run --example particles # fire, smoke, fountain, bursts
+cargo run --example scripted  # a game made only of a scene file and scripts
 ```
 
 In `cubes`, hold the right mouse button to look around, WASD to move.
@@ -81,8 +84,9 @@ cargo run --example sparkball -- --demo  # the game plays itself
 - `crates/engine_platform` – window and input (winit)
 - `crates/engine_render` – renderer (wgpu)
 - `crates/engine_scene` – ECS world, transforms and hierarchy (hecs)
+- `crates/engine_script` – scripting (Rhai)
 - `crates/engine_ui` – user interface (egui)
-- `assets/` – models, textures, sounds and scenes used by the examples
+- `assets/` – models, textures, sounds, scenes and scripts used by the examples
 
 ## License
 

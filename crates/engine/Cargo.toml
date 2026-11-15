@@ -12,6 +12,7 @@ engine_physics.workspace = true
 engine_platform.workspace = true
 engine_render.workspace = true
 engine_scene.workspace = true
+engine_script.workspace = true
 engine_ui.workspace = true
 ron.workspace = true
 serde.workspace = true

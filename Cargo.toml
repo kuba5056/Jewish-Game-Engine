@@ -15,6 +15,7 @@ engine_physics = { path = "crates/engine_physics" }
 engine_platform = { path = "crates/engine_platform" }
 engine_render = { path = "crates/engine_render" }
 engine_scene = { path = "crates/engine_scene" }
+engine_script = { path = "crates/engine_script" }
 engine_ui = { path = "crates/engine_ui" }
 log = "0.4"
 env_logger = "0.11"
@@ -35,3 +36,5 @@ egui-wgpu = "0.37"
 egui-winit = { version = "0.37", default-features = false, features = ["wayland", "x11"] }
 serde = { version = "1", features = ["derive"] }
 ron = "0.12"
+# f32 floats match the engine's math types, so scripts need no conversions.
+rhai = { version = "1", features = ["f32_float"] }

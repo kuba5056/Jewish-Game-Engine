@@ -7,7 +7,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 ///
 /// Keys are physical (layout-independent) codes, so WASD stays in the same
 /// place on any keyboard layout.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Input {
     keys_down: HashSet<KeyCode>,
     keys_pressed: HashSet<KeyCode>,
@@ -65,6 +65,17 @@ impl Input {
     /// Vertical scroll this frame, in lines; positive is away from the user.
     pub fn scroll(&self) -> f32 {
         self.scroll
+    }
+
+    /// Marks a key as pressed, as if the player had pressed it: for demos,
+    /// replays and tests.
+    pub fn press_key(&mut self, key: KeyCode) {
+        self.set_key(key, true);
+    }
+
+    /// Marks a key as released; see [`press_key`](Self::press_key).
+    pub fn release_key(&mut self, key: KeyCode) {
+        self.set_key(key, false);
     }
 
     /// Feeds a window event into the state.

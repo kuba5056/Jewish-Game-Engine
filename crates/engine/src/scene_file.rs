@@ -15,6 +15,7 @@ use engine_render::glam::{Vec3, Vec4};
 use engine_render::Material;
 use engine_scene::hecs::EntityBuilder;
 use engine_scene::{Entity, Name, Parent, Transform, World};
+use engine_script::Script;
 use serde::{Deserialize, Serialize};
 
 use crate::app::Context;
@@ -116,6 +117,9 @@ pub struct SceneEntity {
     pub rigid_body: Option<RigidBody>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub particles: Option<ParticleEmitter>,
+    /// Path of a script file that drives the entity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub script: Option<String>,
 }
 
 /// The contents of a scene file.
@@ -184,6 +188,7 @@ impl SceneFile {
                         .get::<&ParticleEmitter>()
                         .filter(|emitter| !emitter.despawn_when_done)
                         .map(|emitter| (*emitter).clone()),
+                    script: entity.get::<&Script>().map(|script| script.path.clone()),
                 }
             })
             .collect();
@@ -218,6 +223,9 @@ impl SceneFile {
                 }
                 if let Some(emitter) = &desc.particles {
                     builder.add(emitter.clone());
+                }
+                if let Some(path) = &desc.script {
+                    builder.add(Script::new(path.clone()));
                 }
                 world.spawn(builder.build())
             })
@@ -381,6 +389,7 @@ mod tests {
                     parent: Some(1),
                     point_light: Some(PointLight::default()),
                     particles: Some(ParticleEmitter::fire()),
+                    script: Some("scripts/spin.rhai".to_owned()),
                     visual: Some(Visual::Model {
                         path: "models/robot.gltf".to_owned(),
                     }),

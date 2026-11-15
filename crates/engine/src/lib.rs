@@ -60,6 +60,7 @@ pub use engine_scene::{
     despawn_recursive, find_by_name, propagate_transforms, Entity, GlobalTransform, Name, Parent,
     Transform, World,
 };
+pub use engine_script::Script;
 pub use engine_ui::egui;
 pub use log;
 pub use particles::ParticleEmitter;
