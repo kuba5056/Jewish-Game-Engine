@@ -48,6 +48,10 @@ desktop libraries (X11 or Wayland, `libxkbcommon`) and a Vulkan driver, which
 every desktop distribution ships. Windows uses DirectX 12 or Vulkan and needs
 nothing extra.
 
+On NixOS, run `nix-shell` in the repository first: `shell.nix` provides all
+of the above. Graphics must be enabled in the system configuration
+(`hardware.graphics.enable = true;`).
+
 ## Sparkball
 
 `games/sparkball` is a small complete game built only on the engine's public
