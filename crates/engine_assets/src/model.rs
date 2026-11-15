@@ -209,14 +209,18 @@ fn to_rgba8(image: &gltf::image::Data) -> Option<Vec<u8>> {
     Some(match image.format {
         Format::R8G8B8A8 => px.clone(),
         Format::R8G8B8 => px
-            .chunks_exact(3)
-            .flat_map(|c| [c[0], c[1], c[2], 255])
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|&[r, g, b]| [r, g, b, 255])
             .collect(),
         Format::R8 => px.iter().flat_map(|&v| [v, v, v, 255]).collect(),
         // Two channels are grey + alpha.
         Format::R8G8 => px
-            .chunks_exact(2)
-            .flat_map(|c| [c[0], c[0], c[0], c[1]])
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .flat_map(|&[grey, alpha]| [grey, grey, grey, alpha])
             .collect(),
         _ => return None,
     })
@@ -226,8 +230,8 @@ fn to_rgba8(image: &gltf::image::Data) -> Option<Vec<u8>> {
 /// triangle that uses it, which is exact for unshared (flat-shaded) vertices.
 fn flat_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
     let mut normals = vec![[0.0, 1.0, 0.0]; positions.len()];
-    for tri in indices.chunks_exact(3) {
-        let [a, b, c] = [tri[0], tri[1], tri[2]].map(|i| Vec3::from(positions[i as usize]));
+    for tri in indices.as_chunks::<3>().0 {
+        let [a, b, c] = tri.map(|i| Vec3::from(positions[i as usize]));
         let normal = (b - a).cross(c - a).normalize_or_zero();
         if normal != Vec3::ZERO {
             for &i in tri {
