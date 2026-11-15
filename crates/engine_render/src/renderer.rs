@@ -6,8 +6,8 @@ use glam::{Mat3, Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 
 use crate::camera::Camera;
-use crate::mesh::{Mesh, MeshData, Vertex};
-use crate::texture::{mip_chain, Texture};
+use crate::mesh::{Mesh, MeshData, MeshGpu, Vertex};
+use crate::texture::{mip_chain, Texture, TextureGpu};
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -20,8 +20,6 @@ pub enum RenderError {
     NoAdapter(String),
     /// The graphics device could not be opened.
     Device(String),
-    /// An image file could not be decoded.
-    Image(String),
 }
 
 impl std::fmt::Display for RenderError {
@@ -30,7 +28,6 @@ impl std::fmt::Display for RenderError {
             RenderError::Surface(e) => write!(f, "cannot draw to the window: {e}"),
             RenderError::NoAdapter(e) => write!(f, "no usable graphics adapter: {e}"),
             RenderError::Device(e) => write!(f, "cannot open the graphics device: {e}"),
-            RenderError::Image(e) => write!(f, "cannot decode image: {e}"),
         }
     }
 }
@@ -256,7 +253,15 @@ impl Renderer {
 
         let instance_capacity = 256;
         let instance_buffer = create_instance_buffer(&device, instance_capacity);
-        let white = upload_texture(&device, &queue, &texture_layout, &sampler, 1, 1, &[255; 4]);
+        let white = Texture::new(upload_texture(
+            &device,
+            &queue,
+            &texture_layout,
+            &sampler,
+            1,
+            1,
+            &[255; 4],
+        ));
 
         Ok(Self {
             surface,
@@ -283,25 +288,12 @@ impl Renderer {
 
     /// Uploads mesh geometry to the GPU.
     pub fn create_mesh(&self, data: &MeshData) -> Mesh {
-        let vertex_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("mesh vertices"),
-                contents: bytemuck::cast_slice(&data.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-        let index_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("mesh indices"),
-                contents: bytemuck::cast_slice(&data.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
-        Mesh {
-            vertex_buffer,
-            index_buffer,
-            index_count: data.indices.len() as u32,
-        }
+        Mesh::new(upload_mesh(&self.device, data))
+    }
+
+    /// Replaces the geometry of an existing mesh; every clone of it changes.
+    pub fn update_mesh(&self, mesh: &Mesh, data: &MeshData) {
+        *mesh.gpu() = upload_mesh(&self.device, data);
     }
 
     /// Creates a texture from raw pixels: `width * height` RGBA values, 8 bits
@@ -310,6 +302,16 @@ impl Renderer {
     /// # Panics
     /// If `rgba` is not exactly `width * height * 4` bytes or a side is zero.
     pub fn create_texture(&self, width: u32, height: u32, rgba: &[u8]) -> Texture {
+        Texture::new(self.upload_texture(width, height, rgba))
+    }
+
+    /// Replaces the pixels of an existing texture (the size may differ);
+    /// every clone of it changes. Panics like [`create_texture`](Self::create_texture).
+    pub fn update_texture(&self, texture: &Texture, width: u32, height: u32, rgba: &[u8]) {
+        *texture.gpu() = self.upload_texture(width, height, rgba);
+    }
+
+    fn upload_texture(&self, width: u32, height: u32, rgba: &[u8]) -> TextureGpu {
         assert!(width > 0 && height > 0, "texture size must be non-zero");
         assert_eq!(
             rgba.len(),
@@ -325,14 +327,6 @@ impl Renderer {
             height,
             rgba,
         )
-    }
-
-    /// Decodes an image file held in memory (PNG or JPEG) into a texture.
-    pub fn load_texture(&self, file_bytes: &[u8]) -> Result<Texture, RenderError> {
-        let image = image::load_from_memory(file_bytes)
-            .map_err(|e| RenderError::Image(e.to_string()))?
-            .into_rgba8();
-        Ok(self.create_texture(image.width(), image.height(), &image))
     }
 
     /// A plain white texture, for drawing meshes in a flat colour.
@@ -435,6 +429,28 @@ impl Renderer {
             bytemuck::cast_slice(&self.instances),
         );
 
+        // Look up what each handle points at now, so resources replaced since
+        // the draw was queued (hot reload) show their new contents.
+        struct Resolved {
+            vertices: wgpu::Buffer,
+            indices: wgpu::Buffer,
+            index_count: u32,
+            texture: wgpu::BindGroup,
+        }
+        let resolved: Vec<Resolved> = self
+            .commands
+            .iter()
+            .map(|command| {
+                let mesh = command.mesh.gpu();
+                Resolved {
+                    vertices: mesh.vertex_buffer.clone(),
+                    indices: mesh.index_buffer.clone(),
+                    index_count: mesh.index_count,
+                    texture: command.texture.gpu().bind_group.clone(),
+                }
+            })
+            .collect();
+
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
@@ -467,15 +483,12 @@ impl Renderer {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
             pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            for (i, command) in self.commands.iter().enumerate() {
+            for (i, draw) in resolved.iter().enumerate() {
                 let i = i as u32;
-                pass.set_bind_group(1, &command.texture.bind_group, &[]);
-                pass.set_vertex_buffer(0, command.mesh.vertex_buffer.slice(..));
-                pass.set_index_buffer(
-                    command.mesh.index_buffer.slice(..),
-                    wgpu::IndexFormat::Uint32,
-                );
-                pass.draw_indexed(0..command.mesh.index_count, 0, i..i + 1);
+                pass.set_bind_group(1, &draw.texture, &[]);
+                pass.set_vertex_buffer(0, draw.vertices.slice(..));
+                pass.set_index_buffer(draw.indices.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..draw.index_count, 0, i..i + 1);
             }
         }
         self.queue.submit([encoder.finish()]);
@@ -520,6 +533,24 @@ fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffe
     })
 }
 
+fn upload_mesh(device: &wgpu::Device, data: &MeshData) -> MeshGpu {
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("mesh vertices"),
+        contents: bytemuck::cast_slice(&data.vertices),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("mesh indices"),
+        contents: bytemuck::cast_slice(&data.indices),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+    MeshGpu {
+        vertex_buffer,
+        index_buffer,
+        index_count: data.indices.len() as u32,
+    }
+}
+
 fn upload_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -528,7 +559,7 @@ fn upload_texture(
     width: u32,
     height: u32,
     rgba: &[u8],
-) -> Texture {
+) -> TextureGpu {
     let levels = mip_chain(width, height, rgba);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("texture"),
@@ -580,7 +611,7 @@ fn upload_texture(
             },
         ],
     });
-    Texture {
+    TextureGpu {
         bind_group,
         width,
         height,

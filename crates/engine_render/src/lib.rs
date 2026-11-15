@@ -12,4 +12,4 @@ pub use camera::Camera;
 pub use glam;
 pub use mesh::{Mesh, MeshData, Vertex};
 pub use renderer::{RenderError, Renderer};
-pub use texture::Texture;
+pub use texture::{Texture, WeakTexture};

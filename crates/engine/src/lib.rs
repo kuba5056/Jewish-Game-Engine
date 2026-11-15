@@ -30,16 +30,20 @@
 //! ```
 
 mod app;
+mod assets;
 mod scene;
 
 pub use app::{run, Config, Context, Error, Game, System};
+pub use assets::Model;
+pub use engine_assets::AssetError;
 pub use engine_core::Time;
 pub use engine_platform::{Input, KeyCode, MouseButton, WindowConfig};
 pub use engine_render::glam as math;
 pub use engine_render::{Camera, Mesh, MeshData, RenderError, Renderer, Texture, Vertex};
 pub use engine_scene::hecs as ecs;
 pub use engine_scene::{
-    despawn_recursive, propagate_transforms, Entity, GlobalTransform, Parent, Transform, World,
+    despawn_recursive, propagate_transforms, Entity, GlobalTransform, Name, Parent, Transform,
+    World,
 };
 pub use log;
 pub use scene::MeshRenderer;

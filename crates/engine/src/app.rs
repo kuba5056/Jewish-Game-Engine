@@ -1,6 +1,8 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use engine_assets::AssetError;
 use engine_core::Time;
 use engine_platform::winit::application::ApplicationHandler;
 use engine_platform::winit::dpi::LogicalSize;
@@ -8,9 +10,10 @@ use engine_platform::winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use engine_platform::winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use engine_platform::winit::window::{CursorGrabMode, Window, WindowId};
 use engine_platform::{Input, WindowConfig};
-use engine_render::{Camera, RenderError, Renderer};
+use engine_render::{Camera, RenderError, Renderer, Texture};
 use engine_scene::World;
 
+use crate::assets::{Assets, Model};
 use crate::scene::draw_world;
 
 /// Engine start-up settings.
@@ -19,6 +22,12 @@ pub struct Config {
     pub window: WindowConfig,
     /// Simulation rate for [`Game::fixed_update`], in steps per second.
     pub fixed_hz: u32,
+    /// Directory that asset paths are relative to. A relative directory is
+    /// looked for in the working directory, then next to the executable.
+    pub asset_dir: PathBuf,
+    /// Reload textures and models when their files change on disk.
+    /// On by default in debug builds only.
+    pub hot_reload: bool,
 }
 
 impl Default for Config {
@@ -26,6 +35,8 @@ impl Default for Config {
         Self {
             window: WindowConfig::default(),
             fixed_hz: 60,
+            asset_dir: PathBuf::from("assets"),
+            hot_reload: cfg!(debug_assertions),
         }
     }
 }
@@ -68,12 +79,25 @@ pub struct Context {
     /// The camera the frame is rendered from.
     pub camera: Camera,
     window: Arc<Window>,
+    assets: Assets,
     exit_requested: bool,
     systems: Vec<System>,
     fixed_systems: Vec<System>,
 }
 
 impl Context {
+    /// Loads a texture (PNG or JPEG) from the asset directory. Loading the
+    /// same path again returns the already-loaded texture.
+    pub fn load_texture(&mut self, path: impl AsRef<Path>) -> Result<Texture, AssetError> {
+        self.assets.texture(&self.renderer, path.as_ref())
+    }
+
+    /// Loads a glTF model (`.gltf` or `.glb`) from the asset directory.
+    /// Loading the same path again returns the already-loaded model.
+    pub fn load_model(&mut self, path: impl AsRef<Path>) -> Result<Model, AssetError> {
+        self.assets.model(&self.renderer, path.as_ref())
+    }
+
     /// Runs `system` once per frame, after [`Game::update`], in the order added.
     pub fn add_system(&mut self, system: System) {
         self.systems.push(system);
@@ -186,6 +210,8 @@ impl<G: Game> Runner<G> {
         ctx.time.advance(now - self.last_frame);
         self.last_frame = now;
 
+        ctx.assets.maintain(&ctx.renderer, ctx.time.delta_secs());
+
         while ctx.time.step_fixed() {
             self.game.fixed_update(ctx);
             run_systems(ctx, |ctx| &ctx.fixed_systems);
@@ -256,6 +282,7 @@ impl<G: Game> ApplicationHandler for Runner<G> {
             renderer,
             camera: Camera::default(),
             window,
+            assets: Assets::new(&self.config.asset_dir, self.config.hot_reload),
             exit_requested: false,
             systems: Vec::new(),
             fixed_systems: Vec::new(),

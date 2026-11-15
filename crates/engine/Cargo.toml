@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+engine_assets.workspace = true
 engine_core.workspace = true
 engine_platform.workspace = true
 engine_render.workspace = true

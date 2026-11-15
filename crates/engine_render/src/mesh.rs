@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
@@ -75,12 +77,35 @@ impl MeshData {
     }
 }
 
-/// Mesh geometry on the GPU. Cheap to clone; clones share the same buffers.
+/// Mesh geometry on the GPU.
+///
+/// Cheap to clone; clones share the same buffers, so replacing the geometry
+/// with `Renderer::update_mesh` changes every clone at once.
 #[derive(Debug, Clone)]
-pub struct Mesh {
+pub struct Mesh(pub(crate) Arc<Mutex<MeshGpu>>);
+
+#[derive(Debug)]
+pub(crate) struct MeshGpu {
     pub(crate) vertex_buffer: wgpu::Buffer,
     pub(crate) index_buffer: wgpu::Buffer,
     pub(crate) index_count: u32,
+}
+
+impl Mesh {
+    pub(crate) fn new(gpu: MeshGpu) -> Self {
+        Self(Arc::new(Mutex::new(gpu)))
+    }
+
+    /// Whether this is the only handle left to the mesh, i.e. no clone of it
+    /// exists anywhere else.
+    pub fn is_unique(&self) -> bool {
+        Arc::strong_count(&self.0) == 1
+    }
+
+    pub(crate) fn gpu(&self) -> MutexGuard<'_, MeshGpu> {
+        // Replaced whole, never left half-written, so valid even if poisoned.
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 }
 
 #[cfg(test)]

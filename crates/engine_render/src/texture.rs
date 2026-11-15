@@ -1,15 +1,50 @@
-/// A texture on the GPU, ready to draw with. Cheap to clone.
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+
+/// A texture on the GPU, ready to draw with.
+///
+/// Cheap to clone; clones share the same pixels, so replacing them with
+/// `Renderer::update_texture` changes every clone at once.
 #[derive(Debug, Clone)]
-pub struct Texture {
+pub struct Texture(pub(crate) Arc<Mutex<TextureGpu>>);
+
+#[derive(Debug)]
+pub(crate) struct TextureGpu {
     pub(crate) bind_group: wgpu::BindGroup,
     pub(crate) width: u32,
     pub(crate) height: u32,
 }
 
 impl Texture {
+    pub(crate) fn new(gpu: TextureGpu) -> Self {
+        Self(Arc::new(Mutex::new(gpu)))
+    }
+
+    pub(crate) fn gpu(&self) -> MutexGuard<'_, TextureGpu> {
+        // The guarded data is replaced whole, never left half-written, so it
+        // is still valid after a panic elsewhere.
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// Size in pixels.
     pub fn size(&self) -> (u32, u32) {
-        (self.width, self.height)
+        let gpu = self.gpu();
+        (gpu.width, gpu.height)
+    }
+
+    /// A reference that does not keep the texture alive, for caches.
+    pub fn downgrade(&self) -> WeakTexture {
+        WeakTexture(Arc::downgrade(&self.0))
+    }
+}
+
+/// See [`Texture::downgrade`].
+#[derive(Debug, Clone)]
+pub struct WeakTexture(Weak<Mutex<TextureGpu>>);
+
+impl WeakTexture {
+    /// The texture, if anything still uses it.
+    pub fn upgrade(&self) -> Option<Texture> {
+        self.0.upgrade().map(Texture)
     }
 }
 
