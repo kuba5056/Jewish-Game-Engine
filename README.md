@@ -17,29 +17,38 @@ Early. Working so far:
 - assets: glTF models and PNG/JPEG textures loaded from an `assets/`
   directory, shared when loaded twice, and reloaded on screen when the
   files change (debug builds)
+- physics (rapier): boxes, spheres and capsules as dynamic, kinematic or
+  static bodies, collision events, sensors, raycasts
+- audio (kira): WAV/OGG/MP3/FLAC playback with volume, pitch, pan and
+  looping; runs silently when there is no audio device
 
-Next: physics and audio, then debug tools and scene files.
+Next: debug tools and scene files, then a small complete game.
 
 ## Try it
 
 ```
 cargo run --example cubes   # entities, hierarchy, materials, lights, fly camera
 cargo run --example model   # glTF model loading and hot reload
+cargo run --example physics # rigid bodies, collisions, sound
 ```
 
 In `cubes`, hold the right mouse button to look around, WASD to move.
 Escape quits. Run the examples from the repository root so they find
 `assets/`.
 
-On Linux the usual desktop libraries are needed at run time (X11 or Wayland,
-`libxkbcommon`) plus a Vulkan driver; every desktop distribution ships them.
-Windows uses DirectX 12 or Vulkan, with nothing extra to install.
+On Linux, building needs the ALSA headers (`sudo apt install libasound2-dev`
+on Debian/Ubuntu, `alsa-lib-devel` on Fedora). Running needs the usual
+desktop libraries (X11 or Wayland, `libxkbcommon`) and a Vulkan driver, which
+every desktop distribution ships. Windows uses DirectX 12 or Vulkan and needs
+nothing extra.
 
 ## Layout
 
 - `crates/engine` – the facade games depend on (`Game` trait, `engine::run`)
 - `crates/engine_assets` – reading images and glTF models from disk
+- `crates/engine_audio` – sound playback (kira)
 - `crates/engine_core` – timing and the fixed-step clock
+- `crates/engine_physics` – rigid-body physics (rapier)
 - `crates/engine_platform` – window and input (winit)
 - `crates/engine_render` – renderer (wgpu)
 - `crates/engine_scene` – ECS world, transforms and hierarchy (hecs)

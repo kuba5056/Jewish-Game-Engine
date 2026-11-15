@@ -60,6 +60,47 @@ impl MeshData {
         mesh
     }
 
+    /// A sphere centred on the origin. `segments` is the number of slices
+    /// around the equator (at least 3); 32 looks round at most sizes.
+    pub fn sphere(radius: f32, segments: u32) -> Self {
+        use std::f32::consts::PI;
+        let segments = segments.max(3);
+        let rings = (segments / 2).max(2);
+        let mut mesh = Self::default();
+        // A grid of latitude rings from the top pole (+Y) to the bottom one.
+        // The seam column is duplicated so the texture can wrap.
+        for ring in 0..=rings {
+            let v = ring as f32 / rings as f32;
+            let (sin_theta, cos_theta) = (v * PI).sin_cos();
+            for segment in 0..=segments {
+                let u = segment as f32 / segments as f32;
+                let (sin_phi, cos_phi) = (u * 2.0 * PI).sin_cos();
+                let normal = Vec3::new(sin_theta * cos_phi, cos_theta, sin_theta * sin_phi);
+                mesh.vertices.push(Vertex {
+                    position: (normal * radius).to_array(),
+                    normal: normal.to_array(),
+                    uv: [u, v],
+                });
+            }
+        }
+        let stride = segments + 1;
+        for ring in 0..rings {
+            for segment in 0..segments {
+                let a = ring * stride + segment;
+                let (b, c, d) = (a + stride, a + stride + 1, a + 1);
+                // At a pole one edge of the quad collapses to a point, so
+                // only one of its two triangles has any area.
+                if ring != rings - 1 {
+                    mesh.indices.extend([a, c, b]);
+                }
+                if ring != 0 {
+                    mesh.indices.extend([a, d, c]);
+                }
+            }
+        }
+        mesh
+    }
+
     /// Adds a quad spanning `centre ± u ± v`; `u x v` must point along `normal`.
     fn push_quad(&mut self, centre: Vec3, u: Vec3, v: Vec3, normal: Vec3, uv_scale: f32) {
         let base = self.vertices.len() as u32;
@@ -137,6 +178,30 @@ mod tests {
             // Normals point away from the centre, and corners sit at ±1.
             assert!(Vec3::from(v.position).dot(Vec3::from(v.normal)) > 0.0);
             assert!(v.position.iter().all(|c| c.abs() == 1.0));
+        }
+    }
+
+    #[test]
+    fn sphere_is_round_and_faces_outwards() {
+        let sphere = MeshData::sphere(2.0, 16);
+        assert_eq!(sphere.vertices.len(), 9 * 17);
+        // Two triangles per quad, minus one per quad in the two polar rings.
+        assert_eq!(sphere.indices.len(), (8 * 16 * 2 - 2 * 16) * 3);
+        for v in &sphere.vertices {
+            let position = Vec3::from(v.position);
+            assert!((position.length() - 2.0).abs() < 1e-5);
+            assert!((position / 2.0 - Vec3::from(v.normal)).length() < 1e-5);
+        }
+        // Face normals of a sphere only roughly match the vertex normals.
+        for tri in sphere.indices.chunks(3) {
+            let [a, b, c] = [tri[0], tri[1], tri[2]].map(|i| sphere.vertices[i as usize]);
+            let (pa, pb, pc) = (
+                Vec3::from(a.position),
+                Vec3::from(b.position),
+                Vec3::from(c.position),
+            );
+            let face_normal = (pb - pa).cross(pc - pa).normalize();
+            assert!(face_normal.dot((pa + pb + pc).normalize()) > 0.9);
         }
     }
 

@@ -41,7 +41,9 @@ mod scene;
 pub use app::{run, Config, Context, Error, Game, System};
 pub use assets::Model;
 pub use engine_assets::AssetError;
+pub use engine_audio::{Audio, Playback, Sound, SoundHandle};
 pub use engine_core::Time;
+pub use engine_physics::{BodyKind, Collider, Collision, Physics, RayHit, RigidBody, Shape};
 pub use engine_platform::{Input, KeyCode, MouseButton, WindowConfig};
 pub use engine_render::glam as math;
 pub use engine_render::{

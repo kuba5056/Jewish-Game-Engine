@@ -3,7 +3,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use engine_assets::AssetError;
+use engine_audio::{Audio, Sound};
 use engine_core::Time;
+use engine_physics::Physics;
 use engine_platform::winit::application::ApplicationHandler;
 use engine_platform::winit::dpi::LogicalSize;
 use engine_platform::winit::event::{DeviceEvent, DeviceId, WindowEvent};
@@ -74,6 +76,11 @@ pub struct Context {
     pub input: Input,
     /// All entities and their components.
     pub world: World,
+    /// The physics simulation of entities that have a `Collider`. It is
+    /// stepped automatically, once per fixed step, before `fixed_update`.
+    pub physics: Physics,
+    /// Sound playback.
+    pub audio: Audio,
     /// Queue draws here during `update`; they are shown at the end of the frame.
     pub renderer: Renderer,
     /// The camera the frame is rendered from.
@@ -96,6 +103,12 @@ impl Context {
     /// Loading the same path again returns the already-loaded model.
     pub fn load_model(&mut self, path: impl AsRef<Path>) -> Result<Model, AssetError> {
         self.assets.model(&self.renderer, path.as_ref())
+    }
+
+    /// Loads a sound (WAV, OGG, MP3 or FLAC) from the asset directory, for
+    /// `ctx.audio.play`. Loading the same path again reuses the decoded sound.
+    pub fn load_sound(&mut self, path: impl AsRef<Path>) -> Result<Sound, AssetError> {
+        self.assets.sound(path.as_ref())
     }
 
     /// Runs `system` once per frame, after [`Game::update`], in the order added.
@@ -150,7 +163,9 @@ pub trait Game {
     /// Called once, after the window exists and before the first frame.
     fn init(&mut self, _ctx: &mut Context) {}
 
-    /// Called at the fixed simulation rate; use `ctx.time.fixed_delta_secs()`.
+    /// Called at the fixed simulation rate, right after each physics step;
+    /// use `ctx.time.fixed_delta_secs()`. Apply impulses and move kinematic
+    /// bodies here.
     fn fixed_update(&mut self, _ctx: &mut Context) {}
 
     /// Called once per frame; use `ctx.time.delta_secs()`. Entities with a
@@ -213,12 +228,17 @@ impl<G: Game> Runner<G> {
         ctx.assets.maintain(&ctx.renderer, ctx.time.delta_secs());
 
         while ctx.time.step_fixed() {
+            // Stepping first lets fixed_update react to this step's
+            // collisions and see up-to-date positions.
+            ctx.physics
+                .step(&mut ctx.world, ctx.time.fixed_delta_secs());
             self.game.fixed_update(ctx);
             run_systems(ctx, |ctx| &ctx.fixed_systems);
         }
         self.game.update(ctx);
         run_systems(ctx, |ctx| &ctx.systems);
         ctx.input.end_frame();
+        ctx.physics.clear_collisions();
 
         engine_scene::propagate_transforms(&mut ctx.world);
         draw_world(&ctx.world, &mut ctx.renderer);
@@ -279,6 +299,8 @@ impl<G: Game> ApplicationHandler for Runner<G> {
             time: Time::new(self.config.fixed_hz),
             input: Input::default(),
             world: World::new(),
+            physics: Physics::new(),
+            audio: Audio::new(),
             renderer,
             camera: Camera::default(),
             window,

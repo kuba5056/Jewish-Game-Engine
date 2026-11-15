@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use engine_assets::{load_image, load_model, AssetError, ModelData};
+use engine_audio::Sound;
 use engine_render::glam::{Vec3, Vec4};
 use engine_render::{Material, Mesh, Renderer, Texture, WeakTexture};
 use engine_scene::hecs::EntityBuilder;
@@ -211,6 +212,9 @@ pub(crate) struct Assets {
     since_check: f32,
     textures: HashMap<PathBuf, TextureEntry>,
     models: HashMap<PathBuf, ModelEntry>,
+    /// Kept for the whole run: decoded sounds are small and there is no way
+    /// to tell whether one will be played again.
+    sounds: HashMap<PathBuf, Sound>,
 }
 
 impl Assets {
@@ -223,6 +227,7 @@ impl Assets {
             since_check: 0.0,
             textures: HashMap::new(),
             models: HashMap::new(),
+            sounds: HashMap::new(),
         }
     }
 
@@ -260,6 +265,19 @@ impl Assets {
         };
         self.models.insert(path, entry);
         Ok(model)
+    }
+
+    pub(crate) fn sound(&mut self, path: &Path) -> Result<Sound, AssetError> {
+        let path = self.root.join(path);
+        if let Some(sound) = self.sounds.get(&path) {
+            return Ok(sound.clone());
+        }
+        let sound = Sound::from_file(&path).map_err(|message| AssetError::Invalid {
+            path: path.clone(),
+            message,
+        })?;
+        self.sounds.insert(path, sound.clone());
+        Ok(sound)
     }
 
     /// Forgets assets nothing uses any more and, with hot reload on, reloads
