@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use engine_render::{MeshData, Vertex};
-use glam::{Quat, Vec3};
+use glam::{Mat4, Quat, Vec3};
 
+use crate::animation::{AnimationData, Channel, Keyframes, SkinData};
 use crate::{AssetError, ImageData};
 
 /// A model file's contents in CPU memory.
@@ -14,6 +15,8 @@ pub struct ModelData {
     pub meshes: Vec<Vec<PrimitiveData>>,
     /// The node tree, flattened so that a parent always precedes its children.
     pub nodes: Vec<NodeData>,
+    pub skins: Vec<SkinData>,
+    pub animations: Vec<AnimationData>,
     /// Every file the model was read from, for change detection.
     pub files: Vec<PathBuf>,
 }
@@ -49,14 +52,18 @@ pub struct NodeData {
     pub scale: Vec3,
     /// Index into [`ModelData::meshes`].
     pub mesh: Option<usize>,
+    /// Index into [`ModelData::skins`], if the mesh follows a skeleton.
+    pub skin: Option<usize>,
 }
 
 /// Loads a glTF 2.0 model (`.gltf` with its side files, or a single `.glb`).
 ///
 /// Reads the default scene's node tree, triangle meshes (positions, normals,
-/// first UV set) and each material's base colour, base colour texture,
-/// metallic, roughness and emissive factors. Everything else in the file
-/// (animations, skins, cameras, lights, other material textures) is ignored.
+/// first UV set, skinning joints and weights), each material's base colour,
+/// base colour texture, metallic, roughness and emissive factors, skins, and
+/// animations of node translation, rotation and scale. Everything else in
+/// the file (morph targets, cameras, lights, other material textures) is
+/// ignored.
 pub fn load_model(path: &Path) -> Result<ModelData, AssetError> {
     let (document, buffers, images) = gltf::import(path).map_err(|e| match e {
         gltf::Error::Io(io) => AssetError::io(path, io),
@@ -129,21 +136,29 @@ pub fn load_model(path: &Path) -> Result<ModelData, AssetError> {
                 Some(uvs) => uvs.into_f32().collect(),
                 None => vec![[0.0, 0.0]; positions.len()],
             };
-            if normals.len() != positions.len() || uvs.len() != positions.len() {
+            let no_skin = || vec![[0; 4]; positions.len()];
+            let joints: Vec<[u16; 4]> = reader
+                .read_joints(0)
+                .map_or_else(no_skin, |joints| joints.into_u16().collect());
+            let weights: Vec<[f32; 4]> = match reader.read_weights(0) {
+                Some(weights) => weights.into_f32().map(normalized_weights).collect(),
+                None => vec![[0.0; 4]; positions.len()],
+            };
+            let count = positions.len();
+            if [normals.len(), uvs.len(), joints.len(), weights.len()] != [count; 4] {
                 return Err(AssetError::invalid(
                     path,
                     "a mesh's vertex attributes differ in length",
                 ));
             }
 
-            let vertices = positions
-                .iter()
-                .zip(&normals)
-                .zip(&uvs)
-                .map(|((&position, &normal), &uv)| Vertex {
-                    position,
-                    normal,
-                    uv,
+            let vertices = (0..count)
+                .map(|i| Vertex {
+                    position: positions[i],
+                    normal: normals[i],
+                    uv: uvs[i],
+                    joints: joints[i],
+                    weights: weights[i],
                 })
                 .collect();
             primitives.push(PrimitiveData {
@@ -159,12 +174,18 @@ pub fn load_model(path: &Path) -> Result<ModelData, AssetError> {
         .or_else(|| document.scenes().next())
         .ok_or_else(|| AssetError::invalid(path, "the file contains no scene"))?;
     // Depth-first with an explicit stack; a node goes in after its parent.
+    // Skins and animations refer to nodes by their index in the file, which
+    // differs from the position in our flattened list.
+    let mut flat_index: Vec<Option<usize>> = vec![None; document.nodes().len()];
+    let mut node_skins: Vec<Option<usize>> = Vec::new();
     let mut pending: Vec<(gltf::Node, Option<usize>)> =
         scene.nodes().map(|node| (node, None)).collect();
     pending.reverse();
     while let Some((node, parent)) = pending.pop() {
         let (translation, rotation, scale) = node.transform().decomposed();
         let index = model.nodes.len();
+        flat_index[node.index()] = Some(index);
+        node_skins.push(node.skin().map(|skin| skin.index()));
         model.nodes.push(NodeData {
             name: node.name().map(str::to_owned),
             parent,
@@ -172,9 +193,93 @@ pub fn load_model(path: &Path) -> Result<ModelData, AssetError> {
             rotation: Quat::from_array(rotation),
             scale: Vec3::from(scale),
             mesh: node.mesh().map(|mesh| mesh.index()),
+            skin: None,
         });
         let children: Vec<_> = node.children().collect();
         pending.extend(children.into_iter().rev().map(|child| (child, Some(index))));
+    }
+    let buffer = |buffer: gltf::Buffer| buffers.get(buffer.index()).map(|b| &b.0[..]);
+
+    // A skin is kept only if all its joints are in the scene; a mesh whose
+    // skin is dropped is drawn rigid.
+    let mut skin_index: Vec<Option<usize>> = Vec::new();
+    for skin in document.skins() {
+        let joints: Option<Vec<usize>> = skin.joints().map(|j| flat_index[j.index()]).collect();
+        let Some(joints) = joints else {
+            log::warn!("{}: a skin uses nodes outside the scene", path.display());
+            skin_index.push(None);
+            continue;
+        };
+        let mut inverse_bind: Vec<Mat4> = match skin.reader(buffer).read_inverse_bind_matrices() {
+            Some(matrices) => matrices.map(|m| Mat4::from_cols_array_2d(&m)).collect(),
+            None => Vec::new(),
+        };
+        // The file may omit them, meaning identity.
+        inverse_bind.resize(joints.len(), Mat4::IDENTITY);
+        skin_index.push(Some(model.skins.len()));
+        model.skins.push(SkinData {
+            joints,
+            inverse_bind,
+        });
+    }
+    for (node, skin) in model.nodes.iter_mut().zip(node_skins) {
+        node.skin = skin.and_then(|i| skin_index.get(i).copied().flatten());
+    }
+
+    for (number, animation) in document.animations().enumerate() {
+        let mut channels = Vec::new();
+        for channel in animation.channels() {
+            let Some(node) = flat_index[channel.target().node().index()] else {
+                continue; // Animates a node outside the scene.
+            };
+            let reader = channel.reader(buffer);
+            let (Some(times), Some(outputs)) = (reader.read_inputs(), reader.read_outputs()) else {
+                continue;
+            };
+            let times: Vec<f32> = times.collect();
+            use gltf::animation::util::ReadOutputs;
+            use gltf::animation::Interpolation;
+            let interpolation = channel.sampler().interpolation();
+            // Cubic spline samplers store (in-tangent, value, out-tangent)
+            // per keyframe. Only the values are used, blended linearly,
+            // which is close for densely keyed animation.
+            let cubic = interpolation == Interpolation::CubicSpline;
+            fn values<T>(all: impl Iterator<Item = T>, cubic: bool) -> Vec<T> {
+                if cubic {
+                    all.skip(1).step_by(3).collect()
+                } else {
+                    all.collect()
+                }
+            }
+            let values = match outputs {
+                ReadOutputs::Translations(v) => {
+                    Keyframes::Translation(values(v.map(Vec3::from), cubic))
+                }
+                ReadOutputs::Scales(v) => Keyframes::Scale(values(v.map(Vec3::from), cubic)),
+                ReadOutputs::Rotations(v) => Keyframes::Rotation(values(
+                    v.into_f32().map(|q| Quat::from_array(q).normalize()),
+                    cubic,
+                )),
+                ReadOutputs::MorphTargetWeights(_) => continue,
+            };
+            channels.push(Channel {
+                node,
+                times,
+                values,
+                step: interpolation == Interpolation::Step,
+            });
+        }
+        let duration = channels
+            .iter()
+            .filter_map(|channel| channel.times.last().copied())
+            .fold(0.0, f32::max);
+        model.animations.push(AnimationData {
+            name: animation
+                .name()
+                .map_or_else(|| format!("Animation {number}"), str::to_owned),
+            duration,
+            channels,
+        });
     }
 
     Ok(model)
@@ -224,6 +329,17 @@ fn to_rgba8(image: &gltf::image::Data) -> Option<Vec<u8>> {
             .collect(),
         _ => return None,
     })
+}
+
+/// Scales skin weights to sum to 1, so a vertex is not shrunk towards the
+/// origin or blown up by an exporter's rounding.
+fn normalized_weights(weights: [f32; 4]) -> [f32; 4] {
+    let sum: f32 = weights.iter().sum();
+    if sum > 1e-6 {
+        weights.map(|w| w / sum)
+    } else {
+        weights
+    }
 }
 
 /// Normals for a mesh that has none: each vertex gets the normal of the last
@@ -301,6 +417,71 @@ mod tests {
             .map(|f| f.file_name().unwrap().to_str().unwrap())
             .collect();
         assert_eq!(files, ["robot.gltf", "robot.bin", "robot_panel.png"]);
+    }
+
+    #[test]
+    fn loads_node_animation_from_the_robot() {
+        let model = load_model(&robot_path()).unwrap();
+        assert!(model.skins.is_empty());
+        assert_eq!(model.animations.len(), 1);
+        let clip = &model.animations[0];
+        assert_eq!(clip.name, "LookAround");
+        assert_eq!(clip.duration, 3.0);
+        assert_eq!(clip.channels.len(), 1);
+        let head = clip.channels[0].node;
+        assert_eq!(model.nodes[head].name.as_deref(), Some("Head"));
+        assert!(matches!(&clip.channels[0].values, Keyframes::Rotation(v) if v.len() == 4));
+    }
+
+    #[test]
+    fn loads_the_skinned_stalk() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/models/stalk.gltf");
+        let model = load_model(&path).unwrap();
+
+        // The skin's joints are the four chained joint nodes, in order.
+        assert_eq!(model.skins.len(), 1);
+        let skin = &model.skins[0];
+        let names: Vec<_> = skin
+            .joints
+            .iter()
+            .map(|&j| model.nodes[j].name.as_deref().unwrap())
+            .collect();
+        assert_eq!(names, ["Joint0", "Joint1", "Joint2", "Joint3"]);
+        for pair in skin.joints.windows(2) {
+            assert_eq!(model.nodes[pair[1]].parent, Some(pair[0]));
+        }
+        // Joint i rests at height i; its inverse bind matrix undoes that.
+        assert_eq!(
+            skin.inverse_bind[2].w_axis.truncate(),
+            Vec3::new(0.0, -2.0, 0.0)
+        );
+
+        let mesh_node = model.nodes.iter().find(|n| n.mesh.is_some()).unwrap();
+        assert_eq!(mesh_node.skin, Some(0));
+        for vertex in &model.meshes[0][0].mesh.vertices {
+            let total: f32 = vertex.weights.iter().sum();
+            assert!((total - 1.0).abs() < 1e-5);
+            assert!(vertex
+                .joints
+                .iter()
+                .all(|&j| (j as usize) < skin.joints.len()));
+        }
+
+        let names: Vec<_> = model.animations.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Sway", "Twist"]);
+        let sway = &model.animations[0];
+        assert_eq!(sway.duration, 2.0);
+        assert_eq!(sway.channels.len(), 4);
+        assert!(sway.channels.iter().all(|c| skin.joints.contains(&c.node)));
+    }
+
+    #[test]
+    fn weights_are_normalised() {
+        assert_eq!(
+            normalized_weights([2.0, 2.0, 0.0, 0.0]),
+            [0.5, 0.5, 0.0, 0.0]
+        );
+        assert_eq!(normalized_weights([0.0; 4]), [0.0; 4]);
     }
 
     #[test]

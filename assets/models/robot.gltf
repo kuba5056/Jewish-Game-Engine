@@ -77,8 +77,8 @@
     0
    ],
    "rotation": [
-    0,
-    0,
+    -0.0,
+    -0.0,
     -0.10452846326765347,
     0.9945218953682733
    ],
@@ -97,8 +97,8 @@
     0
    ],
    "rotation": [
-    0,
-    0,
+    0.0,
+    0.0,
     0.10452846326765347,
     0.9945218953682733
    ],
@@ -202,10 +202,31 @@
    "uri": "robot_panel.png"
   }
  ],
+ "animations": [
+  {
+   "name": "LookAround",
+   "samplers": [
+    {
+     "input": 4,
+     "output": 5,
+     "interpolation": "LINEAR"
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 2,
+      "path": "rotation"
+     }
+    }
+   ]
+  }
+ ],
  "buffers": [
   {
    "uri": "robot.bin",
-   "byteLength": 840
+   "byteLength": 920
   }
  ],
  "bufferViews": [
@@ -232,6 +253,16 @@
    "byteOffset": 768,
    "byteLength": 72,
    "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 840,
+   "byteLength": 16
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 856,
+   "byteLength": 64
   }
  ],
  "accessors": [
@@ -268,6 +299,24 @@
    "componentType": 5123,
    "count": 36,
    "type": "SCALAR"
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5126,
+   "count": 4,
+   "type": "SCALAR",
+   "min": [
+    0.0
+   ],
+   "max": [
+    3.0
+   ]
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC4"
   }
  ]
 }

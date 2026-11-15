@@ -272,6 +272,7 @@ impl<G: Game> Runner<G> {
         ctx.physics.clear_collisions();
 
         ctx.realize_visuals();
+        crate::animation::animate(&mut ctx.world, ctx.time.delta_secs());
         engine_scene::propagate_transforms(&mut ctx.world);
         draw_world(&ctx.world, &mut ctx.renderer);
 

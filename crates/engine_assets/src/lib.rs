@@ -3,11 +3,13 @@
 //! Nothing here touches the GPU; the engine uploads the results and caches
 //! them.
 
+mod animation;
 mod image_data;
 mod model;
 
 use std::path::{Path, PathBuf};
 
+pub use animation::{AnimationData, Channel, Keyframes, Sample, SkinData};
 pub use image_data::{decode_image, load_image, ImageData};
 pub use model::{load_model, MaterialData, ModelData, NodeData, PrimitiveData};
 

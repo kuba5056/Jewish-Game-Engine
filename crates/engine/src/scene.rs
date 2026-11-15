@@ -3,6 +3,8 @@ use engine_render::{Material, Mesh, Renderer};
 use engine_scene::{GlobalTransform, World};
 use serde::{Deserialize, Serialize};
 
+use crate::animation::Skin;
+
 /// Makes an entity visible: the engine draws `mesh` with `material` at the
 /// entity's `Transform` every frame.
 #[derive(Debug, Clone)]
@@ -60,8 +62,15 @@ impl Default for PointLight {
 
 /// Queues every visible entity and every light in the world for this frame.
 pub(crate) fn draw_world(world: &World, renderer: &mut Renderer) {
-    for (global, mesh_renderer) in world.query::<(&GlobalTransform, &MeshRenderer)>().iter() {
-        renderer.draw(&mesh_renderer.mesh, &mesh_renderer.material, global.0);
+    for (global, mesh_renderer, skin) in world
+        .query::<(&GlobalTransform, &MeshRenderer, Option<&Skin>)>()
+        .iter()
+    {
+        let (mesh, material) = (&mesh_renderer.mesh, &mesh_renderer.material);
+        match skin {
+            Some(skin) => renderer.draw_skinned(mesh, material, &skin.joint_matrices(world)),
+            None => renderer.draw(mesh, material, global.0),
+        }
     }
     for (global, light) in world
         .query::<(&GlobalTransform, &DirectionalLight)>()

@@ -10,11 +10,30 @@ pub struct Vertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+    /// For skinned meshes: the up to four skeleton joints that move this
+    /// vertex, as indices into the skin's joint list.
+    pub joints: [u16; 4],
+    /// How strongly each of `joints` pulls; sums to 1 on a skinned mesh and
+    /// is all zero on a rigid one.
+    pub weights: [f32; 4],
 }
 
 impl Vertex {
-    pub(crate) const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+    pub(crate) const ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+        0 => Float32x3, 1 => Float32x3, 2 => Float32x2,
+        13 => Uint16x4, 14 => Float32x4,
+    ];
+
+    /// A vertex of a rigid (unskinned) mesh.
+    pub fn new(position: [f32; 3], normal: [f32; 3], uv: [f32; 2]) -> Self {
+        Self {
+            position,
+            normal,
+            uv,
+            joints: [0; 4],
+            weights: [0.0; 4],
+        }
+    }
 }
 
 /// Mesh geometry in CPU memory: triangles, counter-clockwise front faces.
@@ -76,11 +95,11 @@ impl MeshData {
                 let u = segment as f32 / segments as f32;
                 let (sin_phi, cos_phi) = (u * 2.0 * PI).sin_cos();
                 let normal = Vec3::new(sin_theta * cos_phi, cos_theta, sin_theta * sin_phi);
-                mesh.vertices.push(Vertex {
-                    position: (normal * radius).to_array(),
-                    normal: normal.to_array(),
-                    uv: [u, v],
-                });
+                mesh.vertices.push(Vertex::new(
+                    (normal * radius).to_array(),
+                    normal.to_array(),
+                    [u, v],
+                ));
             }
         }
         let stride = segments + 1;
@@ -106,12 +125,12 @@ impl MeshData {
         let base = self.vertices.len() as u32;
         let corners = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)];
         for (su, sv) in corners {
-            self.vertices.push(Vertex {
-                position: (centre + u * su + v * sv).to_array(),
-                normal: normal.to_array(),
+            self.vertices.push(Vertex::new(
+                (centre + u * su + v * sv).to_array(),
+                normal.to_array(),
                 // Image row 0 is the top, so v runs downwards.
-                uv: [(su + 1.0) * 0.5 * uv_scale, (1.0 - sv) * 0.5 * uv_scale],
-            });
+                [(su + 1.0) * 0.5 * uv_scale, (1.0 - sv) * 0.5 * uv_scale],
+            ));
         }
         self.indices
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);

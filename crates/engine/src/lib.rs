@@ -34,12 +34,14 @@
 //! }
 //! ```
 
+mod animation;
 mod app;
 mod assets;
 mod debug;
 mod scene;
 mod scene_file;
 
+pub use animation::{AnimationPlayer, Skin};
 pub use app::{run, Config, Context, Error, Game, System};
 pub use assets::{Model, ModelPart};
 pub use engine_assets::AssetError;

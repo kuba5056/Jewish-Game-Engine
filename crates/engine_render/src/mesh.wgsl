@@ -26,6 +26,9 @@ struct Globals {
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var shadow_map: texture_depth_2d;
 @group(0) @binding(2) var shadow_sampler: sampler_comparison;
+// Joint matrices (joint-to-world times inverse bind) of every skinned mesh
+// drawn this frame, back to back.
+@group(0) @binding(3) var<storage, read> joint_matrices: array<mat4x4<f32>>;
 @group(1) @binding(0) var base_texture: texture_2d<f32>;
 @group(1) @binding(1) var base_sampler: sampler;
 
@@ -42,8 +45,13 @@ struct VertexIn {
     @location(8) normal_1: vec4<f32>,
     @location(9) normal_2: vec4<f32>,
     @location(10) base_color: vec4<f32>,
-    @location(11) surface: vec4<f32>,  // x: metallic, y: roughness
+    // x: metallic, y: roughness, z: 0 for a rigid mesh, otherwise one more
+    // than the index of its first matrix in `joint_matrices`.
+    @location(11) surface: vec4<f32>,
     @location(12) emissive: vec4<f32>,
+    // Per-vertex skinning.
+    @location(13) joints: vec4<u32>,
+    @location(14) weights: vec4<f32>,
 }
 
 struct VertexOut {
@@ -58,14 +66,29 @@ struct VertexOut {
 
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
-    let model = mat4x4<f32>(in.model_0, in.model_1, in.model_2, in.model_3);
-    let normal_matrix = mat3x3<f32>(in.normal_0.xyz, in.normal_1.xyz, in.normal_2.xyz);
-    let world = model * vec4<f32>(in.position, 1.0);
+    var world: vec4<f32>;
+    var normal: vec3<f32>;
+    if in.surface.z > 0.5 {
+        // Skinned: the vertex follows a weighted blend of its joints, which
+        // already place it in the world.
+        let first = u32(in.surface.z) - 1u;
+        let skin = joint_matrices[first + in.joints.x] * in.weights.x
+            + joint_matrices[first + in.joints.y] * in.weights.y
+            + joint_matrices[first + in.joints.z] * in.weights.z
+            + joint_matrices[first + in.joints.w] * in.weights.w;
+        world = skin * vec4<f32>(in.position, 1.0);
+        normal = (skin * vec4<f32>(in.normal, 0.0)).xyz;
+    } else {
+        let model = mat4x4<f32>(in.model_0, in.model_1, in.model_2, in.model_3);
+        let normal_matrix = mat3x3<f32>(in.normal_0.xyz, in.normal_1.xyz, in.normal_2.xyz);
+        world = model * vec4<f32>(in.position, 1.0);
+        normal = normal_matrix * in.normal;
+    }
 
     var out: VertexOut;
     out.clip_position = globals.view_proj * world;
     out.world_position = world.xyz;
-    out.normal = normal_matrix * in.normal;
+    out.normal = normal;
     out.uv = in.uv;
     out.base_color = in.base_color;
     out.surface = in.surface;

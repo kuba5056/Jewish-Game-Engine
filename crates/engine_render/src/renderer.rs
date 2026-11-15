@@ -66,7 +66,8 @@ struct Instance {
     /// perpendicular under non-uniform scale.
     normal: [[f32; 4]; 3],
     base_color: [f32; 4],
-    /// x: metallic, y: roughness.
+    /// x: metallic, y: roughness, z: 0 for a rigid mesh, otherwise one more
+    /// than the index of its first joint matrix this frame.
     surface: [f32; 4],
     emissive: [f32; 4],
 }
@@ -124,10 +125,16 @@ pub struct Renderer {
     tonemap_pipeline: wgpu::RenderPipeline,
 
     globals_buffer: wgpu::Buffer,
+    globals_layout: wgpu::BindGroupLayout,
     globals_bind_group: wgpu::BindGroup,
     shadow_view: wgpu::TextureView,
+    shadow_sampler: wgpu::Sampler,
     shadow_buffer: wgpu::Buffer,
+    shadow_layout: wgpu::BindGroupLayout,
     shadow_bind_group: wgpu::BindGroup,
+    /// Joint matrices of this frame's skinned meshes, on the GPU.
+    joint_buffer: wgpu::Buffer,
+    joint_capacity: usize,
     tonemap_layout: wgpu::BindGroupLayout,
     tonemap_buffer: wgpu::Buffer,
     texture_layout: wgpu::BindGroupLayout,
@@ -139,6 +146,7 @@ pub struct Renderer {
     /// Queued for the current frame; `instances[i]` belongs to `commands[i]`.
     commands: Vec<DrawCommand>,
     instances: Vec<Instance>,
+    joints: Vec<[[f32; 4]; 4]>,
     sun: Option<Sun>,
     point_lights: Vec<PointLight>,
 
@@ -215,6 +223,16 @@ impl Renderer {
             },
             count: None,
         };
+        let joints_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
         let uniform_buffer = |label, size| {
             device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
@@ -257,15 +275,10 @@ impl Renderer {
         let shadow_buffer = uniform_buffer("shadow uniforms", 64);
         let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("shadow layout"),
-            entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX)],
-        });
-        let shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shadow uniforms"),
-            layout: &shadow_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: shadow_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                uniform_entry(0, wgpu::ShaderStages::VERTEX),
+                joints_entry(1),
+            ],
         });
         let shadow_shader = device.create_shader_module(wgpu::include_wgsl!("shadow.wgsl"));
         let shadow_pipeline_layout =
@@ -329,6 +342,7 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
+                joints_entry(3),
             ],
         });
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -338,24 +352,18 @@ impl Renderer {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
-        let globals_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("globals"),
-            layout: &globals_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: globals_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&shadow_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&shadow_sampler),
-                },
-            ],
-        });
+        let joint_capacity = 64;
+        let joint_buffer = create_joint_buffer(&device, joint_capacity);
+        let (globals_bind_group, shadow_bind_group) = create_frame_bind_groups(
+            &device,
+            &globals_layout,
+            &globals_buffer,
+            &shadow_view,
+            &shadow_sampler,
+            &shadow_layout,
+            &shadow_buffer,
+            &joint_buffer,
+        );
 
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("texture layout"),
@@ -498,10 +506,15 @@ impl Renderer {
             shadow_pipeline,
             tonemap_pipeline,
             globals_buffer,
+            globals_layout,
             globals_bind_group,
             shadow_view,
+            shadow_sampler,
             shadow_buffer,
+            shadow_layout,
             shadow_bind_group,
+            joint_buffer,
+            joint_capacity,
             tonemap_layout,
             tonemap_buffer,
             texture_layout,
@@ -511,6 +524,7 @@ impl Renderer {
             white,
             commands: Vec::new(),
             instances: Vec::new(),
+            joints: Vec::new(),
             sun: None,
             point_lights: Vec::new(),
             clear_color: Vec3::new(0.02, 0.02, 0.03),
@@ -592,6 +606,26 @@ impl Renderer {
 
     /// Queues a mesh to be drawn this frame at `transform` (model-to-world).
     pub fn draw(&mut self, mesh: &Mesh, material: &Material, transform: Mat4) {
+        self.queue_draw(mesh, material, transform, 0.0);
+    }
+
+    /// Queues a skinned mesh: one whose vertices follow a skeleton.
+    ///
+    /// `joint_matrices` holds, for each joint of the mesh's skin, the joint's
+    /// current world transform times its inverse bind matrix. They place the
+    /// vertices in the world by themselves, so there is no model transform.
+    pub fn draw_skinned(&mut self, mesh: &Mesh, material: &Material, joint_matrices: &[Mat4]) {
+        if joint_matrices.is_empty() {
+            return;
+        }
+        // Zero is reserved for "not skinned", hence the offset by one.
+        let first = self.joints.len() as f32 + 1.0;
+        self.joints
+            .extend(joint_matrices.iter().map(Mat4::to_cols_array_2d));
+        self.queue_draw(mesh, material, Mat4::IDENTITY, first);
+    }
+
+    fn queue_draw(&mut self, mesh: &Mesh, material: &Material, transform: Mat4, skin: f32) {
         let normal = Mat3::from_mat4(transform).inverse().transpose();
         self.instances.push(Instance {
             model: transform.to_cols_array_2d(),
@@ -601,7 +635,7 @@ impl Renderer {
                 normal.z_axis.extend(0.0).to_array(),
             ],
             base_color: material.base_color.to_array(),
-            surface: [material.metallic, material.roughness, 0.0, 0.0],
+            surface: [material.metallic, material.roughness, skin, 0.0],
             emissive: material.emissive.extend(0.0).to_array(),
         });
         self.commands.push(DrawCommand {
@@ -680,6 +714,7 @@ impl Renderer {
         let presented = self.render_queued(camera, overlay);
         self.commands.clear();
         self.instances.clear();
+        self.joints.clear();
         self.sun = None;
         self.point_lights.clear();
         presented
@@ -773,6 +808,24 @@ impl Renderer {
             0,
             bytemuck::cast_slice(&self.instances),
         );
+
+        if self.joints.len() > self.joint_capacity {
+            self.joint_capacity = self.joints.len().next_power_of_two();
+            self.joint_buffer = create_joint_buffer(&self.device, self.joint_capacity);
+            // The bind groups refer to the old buffer.
+            (self.globals_bind_group, self.shadow_bind_group) = create_frame_bind_groups(
+                &self.device,
+                &self.globals_layout,
+                &self.globals_buffer,
+                &self.shadow_view,
+                &self.shadow_sampler,
+                &self.shadow_layout,
+                &self.shadow_buffer,
+                &self.joint_buffer,
+            );
+        }
+        self.queue
+            .write_buffer(&self.joint_buffer, 0, bytemuck::cast_slice(&self.joints));
 
         // Look up what each handle points at now, so resources replaced since
         // the draw was queued (hot reload) show their new contents.
@@ -965,6 +1018,67 @@ fn create_targets(
         hdr,
         tonemap_bind_group,
     }
+}
+
+fn create_joint_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("joint matrices"),
+        size: (capacity * std::mem::size_of::<[[f32; 4]; 4]>()) as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+/// The bind groups shared by every draw in the main pass and in the shadow
+/// pass. Both include the joint buffer, so they are rebuilt when it grows.
+#[allow(clippy::too_many_arguments)]
+fn create_frame_bind_groups(
+    device: &wgpu::Device,
+    globals_layout: &wgpu::BindGroupLayout,
+    globals_buffer: &wgpu::Buffer,
+    shadow_view: &wgpu::TextureView,
+    shadow_sampler: &wgpu::Sampler,
+    shadow_layout: &wgpu::BindGroupLayout,
+    shadow_buffer: &wgpu::Buffer,
+    joint_buffer: &wgpu::Buffer,
+) -> (wgpu::BindGroup, wgpu::BindGroup) {
+    let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("globals"),
+        layout: globals_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(shadow_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(shadow_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: joint_buffer.as_entire_binding(),
+            },
+        ],
+    });
+    let shadow = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("shadow uniforms"),
+        layout: shadow_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: shadow_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: joint_buffer.as_entire_binding(),
+            },
+        ],
+    });
+    (globals, shadow)
 }
 
 fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {

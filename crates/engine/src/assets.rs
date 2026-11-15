@@ -3,13 +3,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use engine_assets::{load_image, load_model, AssetError, ModelData};
+use engine_assets::{load_image, load_model, AnimationData, AssetError, ModelData};
 use engine_audio::Sound;
-use engine_render::glam::{Vec3, Vec4};
+use engine_render::glam::{Mat4, Vec3, Vec4};
 use engine_render::{Material, Mesh, MeshData, Renderer, Texture, WeakTexture};
 use engine_scene::hecs::EntityBuilder;
 use engine_scene::{Entity, Name, Parent, Transform, World};
 
+use crate::animation::{AnimationPlayer, Skin};
 use crate::scene::MeshRenderer;
 
 /// How often unused assets are dropped and files checked for changes, in seconds.
@@ -26,6 +27,9 @@ struct ModelInner {
     meshes: Vec<Vec<Primitive>>,
     /// Parents precede children.
     nodes: Vec<Node>,
+    /// Per skin: its joints as node indices, and their inverse bind matrices.
+    skins: Vec<(Vec<usize>, Arc<[Mat4]>)>,
+    animations: Arc<[AnimationData]>,
 }
 
 struct Primitive {
@@ -38,6 +42,7 @@ struct Node {
     parent: Option<usize>,
     transform: Transform,
     mesh: Option<usize>,
+    skin: Option<usize>,
 }
 
 impl Model {
@@ -82,12 +87,20 @@ impl Model {
                     scale: node.scale,
                 },
                 mesh: node.mesh,
+                skin: node.skin,
             })
+            .collect();
+        let skins = data
+            .skins
+            .iter()
+            .map(|skin| (skin.joints.clone(), Arc::from(skin.inverse_bind.clone())))
             .collect();
         Self(Arc::new(ModelInner {
             textures,
             meshes,
             nodes,
+            skins,
+            animations: Arc::from(data.animations.clone()),
         }))
     }
 
@@ -133,8 +146,10 @@ impl Model {
     /// at `transform`, and returns the root.
     ///
     /// Each node becomes an entity with a `Transform`, a `Parent`, a `Name`
-    /// (if the file names it) and a `MeshRenderer` (if it has a mesh). Remove
-    /// the whole thing with `despawn_recursive(world, root)`.
+    /// (if the file names it) and a `MeshRenderer` (if it has a mesh). Skinned
+    /// meshes get a `Skin`, and if the model has animations the root gets an
+    /// `AnimationPlayer`. Remove the whole thing with
+    /// `despawn_recursive(world, root)`.
     pub fn spawn(&self, world: &mut World, transform: Transform) -> Entity {
         let root = world.spawn((transform,));
         self.spawn_under(world, root);
@@ -145,6 +160,9 @@ impl Model {
     /// existing entity instead of creating a root.
     pub fn spawn_under(&self, world: &mut World, root: Entity) {
         let mut entities: Vec<Entity> = Vec::with_capacity(self.0.nodes.len());
+        // Entities that draw a skinned mesh, with the skin's index. Skins are
+        // attached at the end, once every joint has its entity.
+        let mut skinned: Vec<(Entity, usize)> = Vec::new();
         for node in &self.0.nodes {
             let parent = node.parent.map_or(root, |index| entities[index]);
             let primitives = node
@@ -170,15 +188,35 @@ impl Model {
                 builder.add(renderer(first));
             }
             let entity = world.spawn(builder.build());
+            if let (Some(skin), false) = (node.skin, primitives.is_empty()) {
+                skinned.push((entity, skin));
+            }
             for extra in primitives.iter().skip(1) {
-                world.spawn((
+                let child = world.spawn((
                     Transform::IDENTITY,
                     Parent(entity),
                     ModelPart,
                     renderer(extra),
                 ));
+                if let Some(skin) = node.skin {
+                    skinned.push((child, skin));
+                }
             }
             entities.push(entity);
+        }
+
+        for (entity, skin) in skinned {
+            if let Some((joints, inverse_bind)) = self.0.skins.get(skin) {
+                let skin = Skin {
+                    joints: joints.iter().map(|&node| entities[node]).collect(),
+                    inverse_bind: inverse_bind.clone(),
+                };
+                let _ = world.insert_one(entity, skin);
+            }
+        }
+        if !self.0.animations.is_empty() {
+            let player = AnimationPlayer::new(self.0.animations.clone(), entities);
+            let _ = world.insert_one(root, player);
         }
     }
 }

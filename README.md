@@ -17,6 +17,8 @@ Early. Working so far:
 - assets: glTF models and PNG/JPEG textures loaded from an `assets/`
   directory, shared when loaded twice, and reloaded on screen when the
   files change (debug builds)
+- animation: skeletal (skinned meshes) and node animation from glTF, with
+  an `AnimationPlayer` per model instance
 - physics (rapier): boxes, spheres and capsules as dynamic, kinematic or
   static bodies, collision events, sensors, raycasts
 - audio (kira): WAV/OGG/MP3/FLAC playback with volume, pitch, pan and
@@ -26,7 +28,7 @@ Early. Working so far:
 - scene files (RON): describe entities in a file, load them, and save the
   world back
 
-Possible next steps: skeletal animation, particles, collision with
+Possible next steps: particles, animation blending, collision with
 arbitrary meshes, spatial audio, networking.
 
 ## Try it
@@ -36,6 +38,7 @@ cargo run --example cubes   # entities, hierarchy, materials, lights, fly camera
 cargo run --example model   # glTF model loading and hot reload
 cargo run --example physics # rigid bodies, collisions, sound
 cargo run --example scene   # scene file, debug overlay, inspector
+cargo run --example animation # skinned and node animation
 ```
 
 In `cubes`, hold the right mouse button to look around, WASD to move.
