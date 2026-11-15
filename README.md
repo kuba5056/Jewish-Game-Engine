@@ -57,15 +57,15 @@ of the above. Graphics must be enabled in the system configuration
 
 ## Sparkball
 
-`games/sparkball` is a small complete game built only on the engine's public
-API: roll a ball around an arena, collect every spark before the clock runs
-out, avoid the sweeper and the edges. It has a menu, a HUD, pausing, win and
-lose screens and sound, and its level is the scene file
-`assets/scenes/arena.ron`.
+The `sparkball` example is a small complete game built only on the engine's
+public API: roll a ball around an arena, collect every spark before the clock
+runs out, avoid the sweeper and the edges. It has a menu, a HUD, pausing, win
+and lose screens and sound, and its level is the scene file
+`assets/scenes/arena.ron`. Use it as a starting point for a game of your own.
 
 ```
-cargo run -p sparkball            # WASD/arrows roll, Space jumps, Esc pauses
-cargo run -p sparkball -- --demo  # the game plays itself
+cargo run --example sparkball            # WASD/arrows roll, Space jumps, Esc pauses
+cargo run --example sparkball -- --demo  # the game plays itself
 ```
 
 ## Layout
@@ -79,8 +79,7 @@ cargo run -p sparkball -- --demo  # the game plays itself
 - `crates/engine_render` – renderer (wgpu)
 - `crates/engine_scene` – ECS world, transforms and hierarchy (hecs)
 - `crates/engine_ui` – user interface (egui)
-- `games/sparkball` – the example game
-- `assets/` – models, textures, sounds and scenes used by the examples and the game
+- `assets/` – models, textures, sounds and scenes used by the examples
 
 ## License
 

@@ -1,4 +1,4 @@
-# Development shell for NixOS / Nix: `nix-shell`, then `cargo run -p sparkball`.
+# Development shell for NixOS / Nix: `nix-shell`, then `cargo run --example sparkball`.
 { pkgs ? import <nixpkgs> { } }:
 let
   libs = with pkgs; [

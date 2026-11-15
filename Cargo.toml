@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "games/*"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,7 +8,6 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-engine = { path = "crates/engine" }
 engine_assets = { path = "crates/engine_assets" }
 engine_audio = { path = "crates/engine_audio" }
 engine_core = { path = "crates/engine_core" }
