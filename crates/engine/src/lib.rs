@@ -1,8 +1,11 @@
 //! The engine facade: implement [`Game`], hand it to [`run`].
 //!
 //! ```no_run
-//! use engine::math::Vec4;
-//! use engine::{Config, Context, Game, KeyCode, MeshData, MeshRenderer, Transform};
+//! use engine::math::Vec3;
+//! use engine::{
+//!     Config, Context, DirectionalLight, Game, KeyCode, Material, MeshData, MeshRenderer,
+//!     Transform,
+//! };
 //!
 //! struct MyGame;
 //!
@@ -11,10 +14,12 @@
 //!         // Anything with a Transform and a MeshRenderer is drawn every frame.
 //!         let cube = MeshRenderer {
 //!             mesh: ctx.renderer.create_mesh(&MeshData::cube(1.0)),
-//!             texture: ctx.renderer.white_texture(),
-//!             color: Vec4::ONE,
+//!             material: Material::colored(0.8, 0.2, 0.2),
 //!         };
 //!         ctx.world.spawn((Transform::IDENTITY, cube));
+//!         // A sun, shining down and to the side.
+//!         let sun = Transform::IDENTITY.looking_to(Vec3::new(-0.4, -1.0, -0.3));
+//!         ctx.world.spawn((sun, DirectionalLight::default()));
 //!     }
 //!
 //!     fn update(&mut self, ctx: &mut Context) {
@@ -39,11 +44,13 @@ pub use engine_assets::AssetError;
 pub use engine_core::Time;
 pub use engine_platform::{Input, KeyCode, MouseButton, WindowConfig};
 pub use engine_render::glam as math;
-pub use engine_render::{Camera, Mesh, MeshData, RenderError, Renderer, Texture, Vertex};
+pub use engine_render::{
+    Camera, Material, Mesh, MeshData, RenderError, Renderer, Texture, Vertex, MAX_POINT_LIGHTS,
+};
 pub use engine_scene::hecs as ecs;
 pub use engine_scene::{
     despawn_recursive, propagate_transforms, Entity, GlobalTransform, Name, Parent, Transform,
     World,
 };
 pub use log;
-pub use scene::MeshRenderer;
+pub use scene::{DirectionalLight, MeshRenderer, PointLight};

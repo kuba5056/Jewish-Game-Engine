@@ -8,19 +8,22 @@ Early. Working so far:
 
 - window, main loop with a fixed simulation step, keyboard and mouse input
 - renderer: meshes, perspective camera, textures (PNG/JPEG or raw pixels,
-  with mipmaps), depth buffer, one directional light, vsync
+  with mipmaps), vsync, 4x antialiasing
+- lighting: physically based materials (base colour, metallic, roughness,
+  emissive), a sun with soft shadows, up to 16 point lights, HDR rendering
+  with filmic tone mapping
 - entities and components (hecs ECS), parent/child transform hierarchy,
   systems; entities with a `MeshRenderer` are drawn automatically
 - assets: glTF models and PNG/JPEG textures loaded from an `assets/`
   directory, shared when loaded twice, and reloaded on screen when the
   files change (debug builds)
 
-Next: PBR lighting and shadows, then physics and audio.
+Next: physics and audio, then debug tools and scene files.
 
 ## Try it
 
 ```
-cargo run --example cubes   # entities, hierarchy, fly camera
+cargo run --example cubes   # entities, hierarchy, materials, lights, fly camera
 cargo run --example model   # glTF model loading and hot reload
 ```
 

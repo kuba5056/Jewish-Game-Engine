@@ -7,8 +7,8 @@
 
 use engine::math::{Quat, Vec3, Vec4};
 use engine::{
-    Config, Context, Game, KeyCode, MeshData, MeshRenderer, MouseButton, Parent, Transform,
-    WindowConfig,
+    Config, Context, DirectionalLight, Game, KeyCode, Material, MeshData, MeshRenderer,
+    MouseButton, Parent, PointLight, Transform, WindowConfig,
 };
 
 /// Rotates its entity at a constant rate: axis times radians per second.
@@ -47,52 +47,79 @@ impl Game for Cubes {
         let cube = ctx.renderer.create_mesh(&MeshData::cube(1.0));
         let floor = ctx.renderer.create_mesh(&MeshData::plane(40.0, 20.0));
         let checker = ctx.renderer.create_texture(64, 64, &checkerboard(64, 4));
-        let white = ctx.renderer.white_texture();
 
         ctx.world.spawn((
             Transform::IDENTITY,
             MeshRenderer {
                 mesh: floor,
-                texture: checker.clone(),
-                color: Vec4::ONE,
+                material: Material {
+                    roughness: 0.9,
+                    ..Material::textured(checker.clone())
+                },
             },
         ));
 
-        let colors = [
-            Vec4::new(1.0, 0.35, 0.3, 1.0),
-            Vec4::new(0.35, 1.0, 0.4, 1.0),
-            Vec4::new(0.4, 0.5, 1.0, 1.0),
+        // The sun: only its direction matters.
+        ctx.world.spawn((
+            Transform::IDENTITY.looking_to(Vec3::new(-0.5, -1.0, -0.4)),
+            DirectionalLight::default(),
+        ));
+
+        // Left to right: matte plastic, glossy plastic, polished metal.
+        let cubes = [
+            (Vec4::new(1.0, 0.35, 0.3, 1.0), 0.0, 0.9),
+            (Vec4::new(0.35, 1.0, 0.4, 1.0), 0.0, 0.25),
+            (Vec4::new(0.4, 0.5, 1.0, 1.0), 1.0, 0.3),
         ];
-        for (i, color) in colors.into_iter().enumerate() {
+        for (i, (base_color, metallic, roughness)) in cubes.into_iter().enumerate() {
             let parent = ctx.world.spawn((
                 Transform::from_xyz((i as f32 - 1.0) * 2.5, 1.2, 0.0),
                 Spin(Vec3::new(0.4, 0.5 + i as f32 * 0.3, 0.0)),
                 MeshRenderer {
                     mesh: cube.clone(),
-                    texture: checker.clone(),
-                    color,
+                    material: Material {
+                        texture: Some(checker.clone()),
+                        base_color,
+                        metallic,
+                        roughness,
+                        ..Material::default()
+                    },
                 },
             ));
-            // A small cube attached to the big one: it has no Spin of its
-            // own, yet orbits because its Transform is relative to the parent.
+            // A small glowing cube attached to the big one: it has no Spin of
+            // its own, yet orbits because its Transform is relative to the
+            // parent. The PointLight on it lights whatever it passes.
+            let glow = base_color.truncate();
             ctx.world.spawn((
-                Transform::from_xyz(0.0, 0.9, 0.0).with_scale(Vec3::splat(0.3)),
+                Transform::from_xyz(0.0, 0.9, 0.0).with_scale(Vec3::splat(0.2)),
                 Parent(parent),
                 MeshRenderer {
                     mesh: cube.clone(),
-                    texture: white.clone(),
-                    color,
+                    material: Material {
+                        base_color: Vec4::new(0.0, 0.0, 0.0, 1.0),
+                        emissive: glow * 4.0,
+                        ..Material::default()
+                    },
+                },
+                PointLight {
+                    color: glow,
+                    intensity: 1.5,
+                    range: 4.0,
                 },
             ));
         }
 
-        // A flat-coloured, non-uniformly scaled box behind the cubes.
+        // A non-uniformly scaled golden pillar behind the cubes.
         ctx.world.spawn((
             Transform::from_xyz(0.0, 2.0, -4.0).with_scale(Vec3::new(1.0, 4.0, 1.0)),
             MeshRenderer {
                 mesh: cube,
-                texture: white,
-                color: Vec4::new(1.0, 0.8, 0.2, 1.0),
+                material: Material {
+                    base_color: Vec4::new(1.0, 0.77, 0.34, 1.0),
+                    metallic: 1.0,
+                    roughness: 0.35,
+                    ..Material::default()
+                },
             },
         ));
 

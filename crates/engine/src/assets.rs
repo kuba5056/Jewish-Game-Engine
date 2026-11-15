@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use engine_assets::{load_image, load_model, AssetError, ModelData};
-use engine_render::glam::Vec4;
-use engine_render::{Mesh, Renderer, Texture, WeakTexture};
+use engine_render::glam::{Vec3, Vec4};
+use engine_render::{Material, Mesh, Renderer, Texture, WeakTexture};
 use engine_scene::hecs::EntityBuilder;
 use engine_scene::{Entity, Name, Parent, Transform, World};
 
@@ -29,8 +29,7 @@ struct ModelInner {
 
 struct Primitive {
     mesh: Mesh,
-    texture: Texture,
-    color: Vec4,
+    material: Material,
 }
 
 struct Node {
@@ -54,15 +53,17 @@ impl Model {
                 primitives
                     .iter()
                     .map(|primitive| {
-                        let material = primitive.material.and_then(|i| data.materials.get(i));
-                        let texture = material
-                            .and_then(|m| m.base_color_image)
-                            .and_then(|i| textures.get(i).cloned())
-                            .unwrap_or_else(|| renderer.white_texture());
+                        let source = primitive.material.and_then(|i| data.materials.get(i));
+                        let material = source.map_or_else(Material::default, |m| Material {
+                            texture: m.base_color_image.and_then(|i| textures.get(i).cloned()),
+                            base_color: Vec4::from(m.base_color),
+                            metallic: m.metallic,
+                            roughness: m.roughness,
+                            emissive: Vec3::from(m.emissive),
+                        });
                         Primitive {
                             mesh: renderer.create_mesh(&primitive.mesh),
-                            texture,
-                            color: material.map_or(Vec4::ONE, |m| Vec4::from(m.base_color)),
+                            material,
                         }
                     })
                     .collect()
@@ -144,8 +145,7 @@ impl Model {
                 .map_or(&[][..], Vec::as_slice);
             let renderer = |primitive: &Primitive| MeshRenderer {
                 mesh: primitive.mesh.clone(),
-                texture: primitive.texture.clone(),
-                color: primitive.color,
+                material: primitive.material.clone(),
             };
 
             let mut builder = EntityBuilder::new();

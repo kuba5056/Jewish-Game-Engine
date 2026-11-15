@@ -24,6 +24,12 @@ pub struct MaterialData {
     pub base_color: [f32; 4],
     /// Index into [`ModelData::images`].
     pub base_color_image: Option<usize>,
+    /// 0 for non-metals, 1 for bare metal.
+    pub metallic: f32,
+    /// 0 is mirror-smooth, 1 is fully matte.
+    pub roughness: f32,
+    /// Linear RGB light the surface gives off.
+    pub emissive: [f32; 3],
 }
 
 #[derive(Debug, Clone)]
@@ -48,9 +54,9 @@ pub struct NodeData {
 /// Loads a glTF 2.0 model (`.gltf` with its side files, or a single `.glb`).
 ///
 /// Reads the default scene's node tree, triangle meshes (positions, normals,
-/// first UV set) and each material's base colour and base colour texture.
-/// Everything else in the file (animations, skins, cameras, lights, other
-/// material properties) is ignored.
+/// first UV set) and each material's base colour, base colour texture,
+/// metallic, roughness and emissive factors. Everything else in the file
+/// (animations, skins, cameras, lights, other material textures) is ignored.
 pub fn load_model(path: &Path) -> Result<ModelData, AssetError> {
     let (document, buffers, images) = gltf::import(path).map_err(|e| match e {
         gltf::Error::Io(io) => AssetError::io(path, io),
@@ -86,6 +92,9 @@ pub fn load_model(path: &Path) -> Result<ModelData, AssetError> {
             base_color_image: pbr
                 .base_color_texture()
                 .map(|info| info.texture().source().index()),
+            metallic: pbr.metallic_factor(),
+            roughness: pbr.roughness_factor(),
+            emissive: material.emissive_factor(),
         });
     }
 
@@ -272,6 +281,10 @@ mod tests {
         assert_eq!(model.materials[0].base_color_image, Some(0));
         assert_eq!(model.materials[1].base_color_image, None);
         assert_eq!(model.materials[1].base_color, [1.0, 0.45, 0.1, 1.0]);
+        assert_eq!(model.materials[0].metallic, 0.0);
+        assert_eq!(model.materials[0].roughness, 0.8);
+        assert_eq!(model.materials[1].metallic, 1.0);
+        assert_eq!(model.materials[1].roughness, 0.35);
         assert_eq!(model.images.len(), 1);
         let image = &model.images[0];
         assert_eq!((image.width, image.height), (64, 64));

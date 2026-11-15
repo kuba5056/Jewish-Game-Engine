@@ -5,9 +5,10 @@
 //!
 //! Run from the repository root with: `cargo run --example model`
 
-use engine::math::{Quat, Vec3, Vec4};
+use engine::math::{Quat, Vec3};
 use engine::{
-    Config, Context, Entity, Game, KeyCode, MeshData, MeshRenderer, Transform, WindowConfig,
+    Config, Context, DirectionalLight, Entity, Game, KeyCode, Material, MeshData, MeshRenderer,
+    Transform, WindowConfig,
 };
 
 #[derive(Default)]
@@ -23,10 +24,13 @@ impl Game for ModelDemo {
 
         let floor = MeshRenderer {
             mesh: ctx.renderer.create_mesh(&MeshData::plane(40.0, 1.0)),
-            texture: ctx.renderer.white_texture(),
-            color: Vec4::new(0.35, 0.4, 0.35, 1.0),
+            material: Material::colored(0.35, 0.4, 0.35),
         };
         ctx.world.spawn((Transform::IDENTITY, floor));
+        ctx.world.spawn((
+            Transform::IDENTITY.looking_to(Vec3::new(-0.5, -1.0, -0.6)),
+            DirectionalLight::default(),
+        ));
 
         let robot = match ctx.load_model("models/robot.gltf") {
             Ok(model) => model,
