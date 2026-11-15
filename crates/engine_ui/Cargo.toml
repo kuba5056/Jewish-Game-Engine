@@ -1,0 +1,12 @@
+[package]
+name = "engine_ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+engine_platform.workspace = true
+engine_render.workspace = true
+egui.workspace = true
+egui-wgpu.workspace = true
+egui-winit.workspace = true

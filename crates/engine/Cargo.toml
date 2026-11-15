@@ -1,0 +1,19 @@
+[package]
+name = "engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+engine_assets.workspace = true
+engine_audio.workspace = true
+engine_core.workspace = true
+engine_physics.workspace = true
+engine_platform.workspace = true
+engine_render.workspace = true
+engine_scene.workspace = true
+engine_ui.workspace = true
+ron.workspace = true
+serde.workspace = true
+log.workspace = true
+env_logger.workspace = true

@@ -1,0 +1,273 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "Jewish-Game-Engine test asset"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "Robot",
+   "children": [
+    1,
+    2,
+    4,
+    5,
+    6,
+    7
+   ]
+  },
+  {
+   "name": "Body",
+   "mesh": 0,
+   "translation": [
+    0,
+    1.0,
+    0
+   ],
+   "scale": [
+    0.9,
+    1.0,
+    0.5
+   ]
+  },
+  {
+   "name": "Head",
+   "mesh": 0,
+   "translation": [
+    0,
+    1.85,
+    0
+   ],
+   "scale": [
+    0.55,
+    0.55,
+    0.55
+   ],
+   "children": [
+    3
+   ]
+  },
+  {
+   "name": "Antenna",
+   "mesh": 1,
+   "translation": [
+    0,
+    0.8,
+    0
+   ],
+   "scale": [
+    0.1,
+    0.6,
+    0.1
+   ]
+  },
+  {
+   "name": "ArmL",
+   "mesh": 1,
+   "translation": [
+    -0.65,
+    1.05,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    -0.10452846326765347,
+    0.9945218953682733
+   ],
+   "scale": [
+    0.2,
+    0.9,
+    0.2
+   ]
+  },
+  {
+   "name": "ArmR",
+   "mesh": 1,
+   "translation": [
+    0.65,
+    1.05,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0.10452846326765347,
+    0.9945218953682733
+   ],
+   "scale": [
+    0.2,
+    0.9,
+    0.2
+   ]
+  },
+  {
+   "name": "LegL",
+   "mesh": 1,
+   "translation": [
+    -0.25,
+    0.25,
+    0
+   ],
+   "scale": [
+    0.25,
+    0.5,
+    0.25
+   ]
+  },
+  {
+   "name": "LegR",
+   "mesh": 1,
+   "translation": [
+    0.25,
+    0.25,
+    0
+   ],
+   "scale": [
+    0.25,
+    0.5,
+    0.25
+   ]
+  }
+ ],
+ "meshes": [
+  {
+   "name": "PanelBox",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  },
+  {
+   "name": "LimbBox",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 1
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "Panel",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0
+    },
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.8
+   }
+  },
+  {
+   "name": "Limb",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     1.0,
+     0.45,
+     0.1,
+     1.0
+    ],
+    "metallicFactor": 1.0,
+    "roughnessFactor": 0.35
+   }
+  }
+ ],
+ "textures": [
+  {
+   "source": 0
+  }
+ ],
+ "images": [
+  {
+   "uri": "robot_panel.png"
+  }
+ ],
+ "buffers": [
+  {
+   "uri": "robot.bin",
+   "byteLength": 840
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 288,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 288,
+   "byteLength": 288,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 576,
+   "byteLength": 192,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 768,
+   "byteLength": 72,
+   "target": 34963
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3",
+   "min": [
+    -0.5,
+    -0.5,
+    -0.5
+   ],
+   "max": [
+    0.5,
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 36,
+   "type": "SCALAR"
+  }
+ ]
+}

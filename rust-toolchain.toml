@@ -1,0 +1,6 @@
+# Pins the compiler so that local builds and CI agree. New Rust releases add
+# lints that can fail `clippy -D warnings`; upgrade deliberately by changing
+# the version here and in .github/workflows/ci.yml, then fixing what it finds.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
